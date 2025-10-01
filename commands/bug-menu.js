@@ -35,8 +35,7 @@ export async function bugMenu(message, client) {
 │ Day : ${currentDay}
 │ Date : ${currentDate}/${currentMonth}/${currentYear} 
 │ Version : 5.2.0
-│ Plugins : 63
-│ Type : X-MD        
+│ Type : Mickey       
 ╰────────────────╯
 
 ╭──[ 🕷 BUGS 🕷 ]────╮
