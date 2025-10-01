@@ -36,8 +36,7 @@ export async function prem(message, client) {
 │ Day : ${currentDay}
 │ Date : ${currentDate}/${currentMonth}/${currentYear} 
 │ Version : 5.2.0
-│ Plugins : 63
-│ Type : X-MD        
+│ Base :Mickey        
 ╰─────────────────╯
 
 ╭─[ ✧ PREMIUM CMD ✧ ]──╮
