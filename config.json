@@ -16,15 +16,15 @@
     "root": {
       "primary": "255615858685"
     },
-    "255612130873": {
+    "255615858685": {
       "sudoList": [
-        "255612130873"
+        "255615858685"
       ],
       "tagAudioPath": "tag.mp3",
       "antilink": false,
       "response": false,
       "autoreact": false,
-      "prefix": "",
+      "prefix": ".",
       "welcome": false,
       "record": false,
       "type": false,
