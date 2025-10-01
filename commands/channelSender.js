@@ -30,7 +30,7 @@ async function channelSender(message, client, texts, num) {
 
                 title: "Join Our WhatsApp Channel",
 
-                body: "𝙎𝙀𝙉𝙆𝙐 𝙏𝙀𝘾𝙃",
+                body: "MICKEY-ZENITH",
 
                 mediaType: 1,
 
