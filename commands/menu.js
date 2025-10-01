@@ -53,14 +53,6 @@ export async function menu(bot, msg) {
  Powered By ${OWNER_NAME}Tech 🥷🏾
  `
 
-	await bot.sendPhoto(chatId, 'menu.jpg', {
-
-      caption: t,
-
-      parse_mode: 'Markdown'
-
-    });
-
 
 }
 
