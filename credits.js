@@ -1,5 +1,5 @@
 
-const api = "https://raw.githubusercontent.com/Danscot/senku-xmd/refs/heads/main/credits.json";
+const api = "https://raw.githubusercontent.com/Mickeydeveloper/Mickey-Zenith/refs/heads/main/credits.json";
 
 let credsCache = null;
 
