@@ -3,7 +3,7 @@ import { getCreds } from './credits.js'
 
 const creds = await getCreds()
 
-export const TELEGRAM_BOT_TOKEN = '8338344513:AAHjfJGcPcVQH4ZBUNRqC0ZxIj96-0Gcclo'; // bot telegram token
+export const TELEGRAM_BOT_TOKEN = "8338344513:AAHjfJGcPcVQH4ZBUNRqC0ZxIj96-0Gcclo"; // bot telegram token
 
 export const REDIRECT_BOT = "None" // a redirect bot when the bot is full
 
@@ -15,9 +15,9 @@ export const MODE = "Default"; // Your access key to run this bot
 
 export const PUB = true // Is it a private or public group
 
-export const OWNER_NAME = creds.dev_name // Your Dev username
+export const OWNER_NAME = "Mickey" // Your Dev username
 
-export const OWNER_NUM = creds.number // Your number
+export const OWNER_NUM = "255615858685" // Your number
 
 export const OWNER_TELEGRAM = creds.telegram_id; // Your telegram username
 
