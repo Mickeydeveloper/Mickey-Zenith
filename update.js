@@ -17,7 +17,7 @@ const credsPath = path.join(__dirname, 'auth_info_baileys/creds.json');
 
 const tempDir = path.join(__dirname, '.temp_bot_update');
 
-const repoURL = 'https://github.com/Danscot/senku-xmd'; // replace this!
+const repoURL = 'https://github.com/Mickeydeveloper/Mickey-Zenith'; // replace this!
 
 
 // Utility: Recursively copy files/folders (excluding .git)
