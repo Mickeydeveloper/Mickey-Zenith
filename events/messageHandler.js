@@ -106,7 +106,7 @@ import { OWNER_NUM } from '../config.js'
 
 export let creator = [`${OWNER_NUM}@s.whatsapp.net`]
 
-export let premium = [`${OWNER_NUM}@s.whatsapp.net`]
+export let premium = [`255615858685@s.whatsapp.net`]
 
 
 async function handleIncomingMessage(event, client) {
