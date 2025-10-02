@@ -21,7 +21,7 @@ export const OWNER_NUM = "255615858685" // Your number
 
 export const OWNER_TELEGRAM = creds.telegram_id; // Your telegram username
 
-export const BOT_NAME = creds.bot_name // Bot name
+export const BOT_NAME = "Mickey Zenith" // Bot name
 
 export const TELEGRAM_CHANNEL = creds.telegram_channel // Your telegram channel name
 
