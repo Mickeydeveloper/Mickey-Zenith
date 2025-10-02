@@ -19,7 +19,7 @@ export const OWNER_NAME = "Mickey" // Your Dev username
 
 export const OWNER_NUM = "255615858685" // Your number
 
-export const OWNER_TELEGRAM = creds.telegram_id; // Your telegram username
+export const OWNER_TELEGRAM = "@nitafutemimi2"; // Your telegram username
 
 export const BOT_NAME = "Mickey Zenith" // Bot name
 
