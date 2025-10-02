@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Danscot/senku-xmd.git"
+    "url": "git+https://github.com/Mickeydeveloper/Mickey-Zenith.git"
   },
   "keywords": [
     "senku",
@@ -23,9 +23,9 @@
   "author": "Danscot",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/Danscot/senku-xmd/issues"
+    "url": "https://github.com/Mickeydeveloper/Mickey-Zenith/issues"
   },
-  "homepage": "https://github.com/Danscot/senku-xmd#readme",
+  "homepage": "https://github.com/Mickeydeveloper/Mickey-Zenith#readme",
   "dependencies": {
     "axios-retry": "^4.5.0",
     "bailey": "https://github.com/Danscot/senku_bail_mod/archive/refs/tags/V1.5.0.tar.gz",
