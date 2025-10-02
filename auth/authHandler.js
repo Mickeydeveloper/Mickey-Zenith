@@ -47,7 +47,7 @@ async function connectToWhatsApp(handleMessage) {
             ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠲⢤⣀⣀⠉⠉⠀⠀⠀⠀⠀⠁⠀⣠⠏⠀
             ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠉⠛⠒⠲⠶⠤⠴⠒⠚⠁⠀
 
-               ✅ HELLO WORLD FROM DEV SENKU
+               ✅ MICKEY DEVELOPER CODE THIS
     `);
 
     console.log("📲 Enter your WhatsApp number (with country code, e.g., 237xxxx): ");
