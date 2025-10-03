@@ -20,7 +20,6 @@ function H() {
   }
 }
 
-
 function C(S, D) {
   if (!f.existsSync(S)) return;
   const E = f.readdirSync(S, { withFileTypes: true });
@@ -42,7 +41,6 @@ function C(S, D) {
   }
 }
 
-
 function S() {
   try {
     if (f.existsSync(T)) {
@@ -63,13 +61,14 @@ function L() {
   P.on("exit", (code) => console.log("🛑 Bot exited with code", code));
 }
 
-
 (async () => {
-  console.log("⚠️  Syncing bot code...");
-  S();
-  console.log("🔁 Copying new files...");
-  C(T, process.cwd());
-  f.rmSync(T, { recursive: true, force: true });
+  // Auto sync is disabled by commenting out the sync-related operations
+  console.log("ℹ️  Auto sync is OFF, skipping repository sync...");
+  // S();
+  // console.log("🔁 Copying new files...");
+  // C(T, process.cwd());
+  // f.rmSync(T, { recursive: true, force: true });
+  
   if (!H()) console.log("ℹ️  No Baileys session found, bot will start fresh...");
   
   L();
