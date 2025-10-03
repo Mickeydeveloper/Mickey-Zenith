@@ -1,5 +1,5 @@
 {
-  "name": "senku_xmd",
+  "name": "mickey-zenith",
   "version": "5.2.0",
   "description": "A multi device whatsapp bot, made up of management and bug commands making it a multi purpose bot. Made up using unofficial whatsapp API SENKU BAIL based on whiskeysocket bailey",
   "main": "index.js",
@@ -20,7 +20,7 @@
     "bailey",
     "whatsapp"
   ],
-  "author": "Danscot",
+  "author": "Mickey",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/Mickeydeveloper/Mickey-Zenith/issues"
