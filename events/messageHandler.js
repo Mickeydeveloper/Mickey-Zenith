@@ -35,7 +35,7 @@ import update from '../update.js'
 
 import getpp from '../commands/getpp.js'
 
-import senku from '../commands/senku.js'
+import mickey from '../commands/mickey.js'
 
 import tourl from '../commands/tourl.js';
 
