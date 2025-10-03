@@ -10,8 +10,8 @@
       "welcome": false,
       "record": false,
       "type": false,
-      "like": false,
-      "online": false
+      "like": true,
+      "online": true
     },
     "root": {
       "primary": "255615858685"
@@ -24,7 +24,7 @@
       "antilink": false,
       "response": false,
       "autoreact": false,
-      "prefix": ".",
+      "prefix": "",
       "welcome": false,
       "record": false,
       "type": false,
