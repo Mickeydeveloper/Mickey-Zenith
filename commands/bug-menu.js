@@ -1,28 +1,16 @@
-
 import configManager from '../utils/manageConfigs.js'
-
 import { BOT_NAME } from '../config.js'
-
 import { OWNER_NAME } from '../config.js'
 
 export async function bugMenu(message, client) {
-
     const remoteJid = message.key.remoteJid;
-
     const today = new Date();
-
     const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
     const currentDay = daysOfWeek[today.getDay()];
-
     const currentDate = today.getDate();
-
     const currentMonth = today.getMonth() + 1; 
-
     const currentYear = today.getFullYear();
-
     const number = client.user.id.split(':')[0];
-
     const username = message.pushName || "Unknown";
 
     const t = ` 
@@ -50,27 +38,14 @@ export async function bugMenu(message, client) {
 ╰────────────────╯       
 
 > Powered By ${OWNER_NAME} Tech🥷🏾
-`
-;
+`;
 
     const r = await client.sendMessage(remoteJid, {
-
-        video: { url: "https://files.catbox.moe/vljkk3.mp4" },
-
+        video: { url: "https://files.catbox.moe/8sawgv.mp4" }, // Reinstated video URL
         caption: t,
-
     });
 
-       await client.sendMessage(remoteJid, {
-
-            audio: { url: "bug.mp3" }, 
-
-            mimetype: 'audio/mp4',
-
-            ptt: false,
-
-            quoted: r
-        });
+    
 }   
 
 export default bugMenu;
