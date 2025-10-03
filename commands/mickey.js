@@ -12,7 +12,7 @@ export async function senku(message, client) {
   const query = parts.slice(1).join(' ');
   if (!query) {
     await client.sendMessage(remoteJid, {
-      text: '❌ Please provide a question. Usage: `.senku What is the capital of Cameroon?`'
+      text: '❌ Please provide a question. Usage: `.mickey What is the capital of Cameroon?`'
     });
     return;
   }
@@ -32,7 +32,7 @@ export async function senku(message, client) {
 
     // Send the AI’s reply
     await client.sendMessage(remoteJid, {
-      text: `💬 Q: ${query}\n\n🤖 A: ${data.result}\n\n> Powered by Senku Tech`,
+      text: `💬 Q: ${query}\n\n🤖 A: ${data.result}\n\n> Powered by mickey denzit`,
       quoted: message
     });
 
@@ -45,4 +45,4 @@ export async function senku(message, client) {
   }
 }
 
-export default senku;
+export default mickey;
