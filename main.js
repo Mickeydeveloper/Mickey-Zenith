@@ -24,7 +24,7 @@ if (MODE === "Default") {
 
   if (!durationOrFalse) {
     console.log(
-      "❌ Sorry, you don't have permission to run your Telegram bot on Senku System.\nContact the creator @Mickey"
+      "❌ Sorry, you don't have permission to run your Telegram bot on mickey System.\nContact the creator @Mickey"
     );
     process.exit(1);
   }
