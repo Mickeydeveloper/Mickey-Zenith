@@ -6,7 +6,7 @@
       "antilink": false,
       "response": true,
       "autoreact": false,
-      "prefix": ".",
+      "prefix": "",
       "welcome": false,
       "record": false,
       "type": false,
