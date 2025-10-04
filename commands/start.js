@@ -3,9 +3,9 @@ import { isUserInChannel } from '../utils/checkmember.js';
 
 export async function start(bot, msg) {
 
-  const CHANNEL_USERNAME = '@senku_tech_channel';
+  const CHANNEL_USERNAME = '@Mickey Support';
 
-  const GROUP_USERNAME = '@senku_tech';
+  const GROUP_USERNAME = '@Mickey_support';
 
   const chatId = msg.chat.id;
 
