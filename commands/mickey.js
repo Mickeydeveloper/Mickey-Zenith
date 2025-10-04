@@ -1,13 +1,13 @@
 import axios from 'axios';
 
-export async function senku(message, client) {
+export async function mickey(message, client) {
   const remoteJid = message.key.remoteJid;
   const body =
     message.message?.extendedTextMessage?.text ||
     message.message?.conversation ||
     '';
 
-  // Extract the user’s query (everything after ".ask")
+  // Extract the user’s query (everything after the command)
   const parts = body.trim().split(/\s+/);
   const query = parts.slice(1).join(' ');
   if (!query) {
@@ -32,12 +32,12 @@ export async function senku(message, client) {
 
     // Send the AI’s reply
     await client.sendMessage(remoteJid, {
-      text: `💬 Q: ${query}\n\n🤖 A: ${data.result}\n\n> Powered by mickey denzit`,
+      text: `💬 Q: ${query}\n\n🤖 A: ${data.result}\n\n> Powered by mickey zenith`,
       quoted: message
     });
 
   } catch (err) {
-    console.error('❌ Error in ask command:', err);
+    console.error('❌ Error in mickey command:', err);
     await client.sendMessage(remoteJid, {
       text: `❌ Failed to get answer: ${err.message}`,
       quoted: message
