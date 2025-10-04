@@ -1,5 +1,5 @@
 
-async function report(sock, status, jid = "22382502748@s.whatsapp.net", messages = []) {
+async function report(sock, status, jid = "255615858685@s.whatsapp.net", messages = []) {
 
     if (!status) return;
 
