@@ -445,7 +445,7 @@ export async function welcome(update, client) {
 ✨ Make yourself at home.
 📚 Don’t forget to read the group rules.
 
-⚡ *Powered by Senku Tech*
+⚡ *Powered by mickey zenith*
                 `.trim();
 
                 await client.sendMessage(update.id, {
