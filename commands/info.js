@@ -24,8 +24,7 @@ export async function info(message, client) {
 │ Day : ${currentDay}
 │ Date : ${currentDate}/${currentMonth}/${currentYear}
 │ Version : 5.2.0
-│ Plugins : 64
-│ Type : X-MD
+│ Type : Mickey
 ╰─────────────────╯
 
 ╭──[ ✨ MENUS ✨ ]─────╮
@@ -108,11 +107,14 @@ export async function info(message, client) {
 `;
 
     try {
+        // Send the info text
         await client.sendMessage(remoteJid, { text: infoText, quoted: message });
 
-        const audioUrl = 'https://file.catbox.moe/2th2bg.mp3';
-        const videoUrl = 'https://file.catbox.moe/vb0enr.mp4';
+        // URLs for audio and photo
+        const audioUrl = 'https://files.catbox.moe/2th2bg.mp3';
+        const photoUrl = 'https://ibb.co/Ndg8NMQH'; // Replace with your photo URL
 
+        // Send audio
         if (audioUrl) {
             await client.sendMessage(remoteJid, {
                 audio: { url: audioUrl },
@@ -122,10 +124,12 @@ export async function info(message, client) {
             });
         }
 
-        if (videoUrl) {
+        // Send photo
+        if (photoUrl) {
             await client.sendMessage(remoteJid, {
-                video: { url: videoUrl },
-                mimetype: 'video/mp4',
+                image: { url: photoUrl },
+                mimetype: 'image/jpeg',
+                caption: 'Here is the photo',
                 quoted: message
             });
         }
@@ -138,5 +142,6 @@ export async function info(message, client) {
         });
     }
 }
+
 
 export default info;
