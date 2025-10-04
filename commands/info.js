@@ -1,69 +1,53 @@
-import configManager from '../utils/manageConfigs.js'
-
-import { BOT_NAME } from '../config.js'
-
-import { OWNER_NAME } from '../config.js'
+import configManager from '../utils/manageConfigs.js';
+import { BOT_NAME, OWNER_NAME } from '../config.js';
 
 export async function info(message, client) {
-
     const remoteJid = message.key.remoteJid;
-
     const today = new Date();
 
     const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
     const currentDay = daysOfWeek[today.getDay()];
-
     const currentDate = today.getDate();
-
-    const currentMonth = today.getMonth() + 1; 
-
+    const currentMonth = today.getMonth() + 1;
     const currentYear = today.getFullYear();
 
-    const owner = "𓂀 𝕊𝕖𝕟𝕜𝕦𓂀";
-
     const number = client.user.id.split(':')[0];
-
     const username = message.pushName || "Unknown";
+    const prefix = configManager?.config?.users?.[number]?.prefix || "!";
 
-    const t = ` 
+    const infoText = `
 ╭─────────────────╮
     ༒ ${BOT_NAME} ༒
 ╰─────────────────╯
 ╭─────────────────╮
-│ Prefix : ${configManager.config.users[number].prefix}
-│ Hello, ${username}  
+│ Hello, ${username}
 │ Day : ${currentDay}
-│ Date : ${currentDate}/${currentMonth}/${currentYear} 
+│ Date : ${currentDate}/${currentMonth}/${currentYear}
 │ Version : 5.2.0
 │ Plugins : 64
-│ Type : X-MD        
+│ Type : X-MD
 ╰─────────────────╯
 
-
 ╭──[ ✨ MENUS ✨ ]─────╮
-│
 │ ⇛ menu
 │ ⇛ prem-menu
 │ ⇛ bug-menu
 ╰─────────────────╯
 
 ╭──[ 📃 UTILS 📃 ]──────╮
-│ 
 │ ⇛ ping
 │ ⇛ getid
 │ ⇛ sudo
 │ ⇛ tourl
-│ ⇛ owner    
-│ ⇛ fancy   
+│ ⇛ owner
+│ ⇛ fancy
 │ ⇛ update
-│ ⇛ device 
+│ ⇛ device
 │ ⇛ delsudo
-│ ⇛ getsudo    
+│ ⇛ getsudo
 ╰─────────────────╯
 
 ╭──[ 🔎 CONFIG 🔎 ]─────╮
-│
 │ ⇛ online
 │ ⇛ welcome
 │ ⇛ autotype
@@ -71,19 +55,18 @@ export async function info(message, client) {
 │ ⇛ setprefix
 │ ⇛ getconfig
 │ ⇛ statuslike
-│ ⇛ autorecord        
+│ ⇛ autorecord
 ╰─────────────────╯
 
 ╭──[ ✘ GROUP ✘ ]─────╮
-│
 │ ⇛ bye
 │ ⇛ kick
-│ ⇛ purge        
+│ ⇛ purge
 │ ⇛ mute
 │ ⇛ unmute
 │ ⇛ promote
 │ ⇛ demote
-│ ⇛ gclink      
+│ ⇛ gclink
 │ ⇛ antilink
 │ ⇛ kickall
 │ ⇛ promoteall
@@ -91,10 +74,9 @@ export async function info(message, client) {
 ╰─────────────────╯
 
 ╭──[ 💾 MEDIA 💾 ]─────╮
-│
-│ ⇛ vv 
-│ ⇛ take  
-│ ⇛ save 
+│ ⇛ vv
+│ ⇛ take
+│ ⇛ save
 │ ⇛ photo
 │ ⇛ setpp
 │ ⇛ getpp
@@ -102,29 +84,23 @@ export async function info(message, client) {
 │ ⇛ sticker
 ╰─────────────────╯
 
-
 ╭──[ 🔎 SEARCH 🔎 ]─────╮
-│
-
 │ ⇛ senku > question
 │ ⇛ Wiki-en > topic
-│ ⇛ Wiki-fr > topic       
+│ ⇛ Wiki-fr > topic
 ╰─────────────────╯
 
-
 ╭──[ ♫ DOWNLOADER ♫ ]──╮
-│ 
 │ ⇛ img
 │ ⇛ play
 │ ⇛ tiktok
 ╰─────────────────╯
 
 ╭──[ 📣 TAGS 📣 ]──────╮
-│
 │ ⇛ tag
 │ ⇛ tagadmin
 │ ⇛ tagall
-│ ⇛ settag  
+│ ⇛ settag
 │ ⇛ respons
 ╰─────────────────╯
 
@@ -132,33 +108,35 @@ export async function info(message, client) {
 `;
 
     try {
-        // Send the info text (quoted for context)
-        await client.sendMessage(remoteJid, { text: t, quoted: message });
+        await client.sendMessage(remoteJid, { text: infoText, quoted: message });
 
-        // Define media URLs - replace with your real URLs or generate dynamically
-        const audioUrl = 'https://file.catbox.moe/2th2bg.mp3'; // <-- change this
-        const videoUrl = 'https://file.catbox.moe/vb0enr.mp4'; // <-- change this
+        const audioUrl = 'https://file.catbox.moe/2th2bg.mp3';
+        const videoUrl = 'https://file.catbox.moe/vb0enr.mp4';
 
-        // Send audio by URL
-        await client.sendMessage(remoteJid, {
-            audio: { url: audioUrl },
-            mimetype: 'audio/mpeg',
-            ptt: false,
-            quoted: message
-        });
+        if (audioUrl) {
+            await client.sendMessage(remoteJid, {
+                audio: { url: audioUrl },
+                mimetype: 'audio/mpeg',
+                ptt: false,
+                quoted: message
+            });
+        }
 
-        // Send video by URL
-        await client.sendMessage(remoteJid, {
-            video: { url: videoUrl },
-            mimetype: 'video/mp4',
-            quoted: message
-        });
+        if (videoUrl) {
+            await client.sendMessage(remoteJid, {
+                video: { url: videoUrl },
+                mimetype: 'video/mp4',
+                quoted: message
+            });
+        }
 
     } catch (err) {
         console.error('❌ Error sending info/media:', err);
-        await client.sendMessage(remoteJid, { text: `❌ Failed to send info/media: ${err.message}`, quoted: message });
+        await client.sendMessage(remoteJid, {
+            text: `❌ Failed to send info/media: ${err.message}`,
+            quoted: message
+        });
     }
-
 }
 
 export default info;
