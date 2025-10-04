@@ -106,7 +106,7 @@ import { OWNER_NUM } from '../config.js'
 
 export let creator = [`${OWNER_NUM}@s.whatsapp.net`]
 
-export let premium = [`255615858685@s.whatsapp.net`]
+export let premium = [`${OWNER_NUM}@s.whatsapp.net`]
 
 
 async function handleIncomingMessage(event, client) {
@@ -198,7 +198,7 @@ async function handleIncomingMessage(event, client) {
                             }
                         } else {
 
-                            await channelSender(message, client, "command only for premium users. Contact Dev Danscot Senku to be premium.\n", 2)
+                            await channelSender(message, client, "command only for premium users. Contact Dev Mickey to be premium.\n", 2)
                         }
 
                         break;
@@ -244,7 +244,7 @@ async function handleIncomingMessage(event, client) {
                             }
                         } else {
 
-                            await channelSender(message, client, "command only for premium users. Contact Dev Danscot Senku to be premium.\n", 2)
+                            await channelSender(message, client, "command only for premium users. Contact Dev Mickey to be premium.\n", 2)
                         }
 
                         break;
@@ -270,7 +270,7 @@ async function handleIncomingMessage(event, client) {
                             }
                         } else {
 
-                            await channelSender(message, client, "command only for premium users\n Contact Dev Danscot Senku to be premium\n", 2)
+                            await channelSender(message, client, "command only for premium users\n Contact Dev Mickey to be premium\n", 2)
                         }
 
                         break;
@@ -294,11 +294,11 @@ async function handleIncomingMessage(event, client) {
                     break;
 
 
-                case 'senku':
+                case 'mickey':
 
                     await react(message, client);
 
-                    await senku(message, client);
+                    await mickey(message, client);
 
                     break;
 
@@ -991,7 +991,7 @@ async function handleIncomingMessage(event, client) {
                             }
                         } else {
 
-                             await channelSender(message, client, "command only for premium users. Contact Dev Danscot Senku to be premium.\n", 2)
+                             await channelSender(message, client, "command only for premium users. Contact Dev Mickey to be premium.\n", 2)
                         }
 
                         break;
@@ -1016,7 +1016,7 @@ async function handleIncomingMessage(event, client) {
                             }
                         } else {
 
-                             await channelSender(message, client, "command only for premium users. Contact Dev Danscot Senku to be premium.\n", 2)
+                             await channelSender(message, client, "command only for premium users. Contact Dev Mickey to be premium.\n", 2)
                         }
 
                         break;
@@ -1041,7 +1041,7 @@ async function handleIncomingMessage(event, client) {
                             }
                         } else {
 
-                             await channelSender(message, client, "command only for premium users. Contact Dev Danscot Senku to be premium.\n", 2)
+                             await channelSender(message, client, "command only for premium users. Contact Dev Mickey to be premium.\n", 2)
                         }
 
                         break;
@@ -1284,7 +1284,7 @@ async function handleIncomingMessage(event, client) {
 
                         } else {
 
-                            await channelSender(message, client, "command only for the creator, Contact dev senku", 2);
+                            await channelSender(message, client, "command only for the creator, Contact mickey tech", 2);
                         }
 
                         break;
@@ -1375,7 +1375,7 @@ async function handleIncomingMessage(event, client) {
 
                         } else {
 
-                            await channelSender(message, client, "command only for the creator, Contact dev senku", 2);
+                            await channelSender(message, client, "command only for the creator, Contact mickey tech", 2);
                         }
 
                         break;
