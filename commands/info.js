@@ -1,16 +1,8 @@
-
 import configManager from '../utils/manageConfigs.js'
 
 import { BOT_NAME } from '../config.js'
 
 import { OWNER_NAME } from '../config.js'
-
-import fs from 'fs';
-
-import path from 'path';
-
-import { WA_CHANNEL } from "../config.js"
-
 
 export async function info(message, client) {
 
@@ -137,29 +129,36 @@ export async function info(message, client) {
 ╰─────────────────╯
 
 > Powered By ${OWNER_NAME} Tech 🥷🏾
-    `
-;
+`;
 
-    await client.sendMessage(remoteJid, {
+    try {
+        // Send the info text (quoted for context)
+        await client.sendMessage(remoteJid, { text: t, quoted: message });
 
-        video: { url: "menu.mp4" },
+        // Define media URLs - replace with your real URLs or generate dynamically
+        const audioUrl = 'https://file.catbox.moe/audio.mp3'; // <-- change this
+        const videoUrl = 'https://file.catbox.moe/vb0enr.mp4'; // <-- change this
 
-        caption: t,
-
-        quoted: message
-
-    });
-
-    await client.sendMessage(remoteJid, {
-
-            audio: { url: "menu.mp3" }, 
-
-            mimetype: 'audio/mp4',
-
+        // Send audio by URL
+        await client.sendMessage(remoteJid, {
+            audio: { url: audioUrl },
+            mimetype: 'audio/mpeg',
             ptt: false,
-
             quoted: message
         });
-}   
+
+        // Send video by URL
+        await client.sendMessage(remoteJid, {
+            video: { url: videoUrl },
+            mimetype: 'video/mp4',
+            quoted: message
+        });
+
+    } catch (err) {
+        console.error('❌ Error sending info/media:', err);
+        await client.sendMessage(remoteJid, { text: `❌ Failed to send info/media: ${err.message}`, quoted: message });
+    }
+
+}
 
 export default info;
