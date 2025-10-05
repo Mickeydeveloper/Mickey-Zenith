@@ -107,29 +107,28 @@ export async function info(message, client) {
 `;
 
     try {
-        // Send the info text
+        // Send the info text first
         await client.sendMessage(remoteJid, { text: infoText, quoted: message });
 
-        // URLs for audio and photo
-        const audioUrl = 'https://files.catbox.moe/2th2bg.mp3';
+        // URLs for photo and audio
         const photoUrl = 'https://files.catbox.moe/8fqjpy.jpeg'; // Replace with your photo URL
+        const audioUrl = 'https://files.catbox.moe/2th2bg.mp3';
 
-        // Send audio
+        // Send photo without caption
+        if (photoUrl) {
+            await client.sendMessage(remoteJid, {
+                image: { url: photoUrl },
+                mimetype: 'image/jpeg',
+                quoted: message
+            });
+        }
+
+        // Send audio after
         if (audioUrl) {
             await client.sendMessage(remoteJid, {
                 audio: { url: audioUrl },
                 mimetype: 'audio/mpeg',
                 ptt: false,
-                quoted: message
-            });
-        }
-
-        // Send photo
-        if (photoUrl) {
-            await client.sendMessage(remoteJid, {
-                image: { url: photoUrl },
-                mimetype: 'image/jpeg',
-                caption: 'Here is the photo',
                 quoted: message
             });
         }
@@ -142,6 +141,5 @@ export async function info(message, client) {
         });
     }
 }
-
 
 export default info;
