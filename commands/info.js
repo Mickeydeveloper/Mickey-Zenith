@@ -112,7 +112,7 @@ export async function info(message, client) {
 
         // URLs for audio and photo
         const audioUrl = 'https://files.catbox.moe/2th2bg.mp3';
-        const photoUrl = 'https://ibb.co/Ndg8NMQH'; // Replace with your photo URL
+        const photoUrl = 'https://files.catbox.moe/8fqjpy.jpeg'; // Replace with your photo URL
 
         // Send audio
         if (audioUrl) {
