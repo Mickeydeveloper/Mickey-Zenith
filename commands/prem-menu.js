@@ -54,8 +54,8 @@ export async function prem(message, client) {
         await client.sendMessage(remoteJid, { text: t, quoted: message });
 
         // Define media URLs - replace with your real URLs or generate dynamically
-        const audioUrl = 'https://file.catbox.moe/audio.mp3'; // <-- change this
-        const videoUrl = 'https://file.catbox.moe/vb0enr.mp4'; // <-- change this
+        const audioUrl = 'https://files.catbox.moe/2th2bg.mp3'; // <-- change this
+        const videoUrl = 'https://files.catbox.moe/vb0enr.mp4'; // <-- change this
 
         // Send audio by URL
         await client.sendMessage(remoteJid, {
