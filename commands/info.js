@@ -10,6 +10,8 @@ export async function info(message, client) {
     const currentDate = today.getDate();
     const currentMonth = today.getMonth() + 1;
     const currentYear = today.getFullYear();
+    const photoUrl = 'https://files.catbox.moe/8fqjpy.jpeg';
+
 
     const number = client.user.id.split(':')[0];
     const username = message.pushName || "Unknown";
@@ -111,17 +113,9 @@ export async function info(message, client) {
         await client.sendMessage(remoteJid, { text: infoText, quoted: message });
 
         // URLs for photo and audio
-        const photoUrl = 'https://files.catbox.moe/8fqjpy.jpeg'; // Replace with your photo URL
         const audioUrl = 'https://files.catbox.moe/2th2bg.mp3';
 
-        // Send photo without caption
-        if (photoUrl) {
-            await client.sendMessage(remoteJid, {
-                image: { url: photoUrl },
-                mimetype: 'image/jpeg',
-                quoted: message
-            });
-        }
+        
 
         // Send audio after
         if (audioUrl) {
