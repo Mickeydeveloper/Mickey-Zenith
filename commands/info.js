@@ -10,13 +10,14 @@ export async function info(message, client) {
     const currentDate = today.getDate();
     const currentMonth = today.getMonth() + 1;
     const currentYear = today.getFullYear();
-    const photoUrl = 'https://files.catbox.moe/8fqjpy.jpeg';
+    const photoUrl = 'https://files.catbox.moe/8fqjpy.jpeg'; // Your photo URL
 
 
     const number = client.user.id.split(':')[0];
     const username = message.pushName || "Unknown";
     const prefix = configManager?.config?.users?.[number]?.prefix || "!";
 
+    // The infoText is now the CAPTION for the photo message
     const infoText = `
 ╭─────────────────╮
     ༒ ${BOT_NAME} ༒
@@ -109,15 +110,21 @@ export async function info(message, client) {
 `;
 
     try {
-        // Send the info text first
-        await client.sendMessage(remoteJid, { text: infoText, quoted: message });
-
-        // URLs for photo and audio
+        // URLs for audio
         const audioUrl = 'https://files.catbox.moe/2th2bg.mp3';
 
+        // 1. Send the PHOTO first with the infoText as the caption
+        if (photoUrl) {
+            await client.sendMessage(remoteJid, {
+                // Assuming your WhatsApp client library uses the 'image' or 'document'
+                // key for media from a URL, and 'caption' for the text.
+                image: { url: photoUrl }, 
+                caption: infoText, 
+                quoted: message
+            });
+        }
         
-
-        // Send audio after
+        // 2. Send the AUDIO message after
         if (audioUrl) {
             await client.sendMessage(remoteJid, {
                 audio: { url: audioUrl },
