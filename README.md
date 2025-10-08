@@ -1,172 +1,77 @@
----
+import React, { useState } from 'react';
 
-# 𓂀 Senku WhatsApp Bot v5.2.0 𓂀
+const BotWeb = () => {
+  const [meterNumber, setMeterNumber] = useState('');
+  const [reading, setReading] = useState('');
+  const [bill, setBill] = useState(null);
 
-A **feature-rich WhatsApp bot** built with **Node.js** and **https://github.com/WhiskeySockets/Baileys**, packed with automation, media handling, search tools, and group management commands.
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const calculatedBill = parseFloat(reading) * 1.25;
+    setBill(`Estimated bill for meter ${meterNumber}: TZS ${calculatedBill.toFixed(2)}`);
+  };
 
-> **Powered by Senku Tech 🥷🏾**
+  return (
+    <div style={styles.container}>
+      <h1 style={styles.title}>💧 Water Billing Bot</h1>
+      <form onSubmit={handleSubmit} style={styles.form}>
+        <label style={styles.label}>Meter Number:</label>
+        <input type="text" value={meterNumber} onChange={(e) => setMeterNumber(e.target.value)} style={styles.input} required />
 
----
+        <label style={styles.label}>Current Reading:</label>
+        <input type="number" value={reading} onChange={(e) => setReading(e.target.value)} style={styles.input} required />
 
-## 🌟 Bot Overview
+        <button type="submit" style={styles.button}>Generate Bill</button>
+      </form>
 
-* **Prefix:** Configurable per user
-* **Owner:** 𓂀 Danscot𓂀
-* **Version:** 5.2.0
-* **Plugins:** 63
-* **Type:** X-MD 
-* **Rich Media Menu:** ✅ (Image + Audio)
-* **Support telegram pairing mode**
+      {bill && <p style={styles.result}>{bill}</p>}
+    </div>
+  );
+};
 
----
+const styles = {
+  container: {
+    maxWidth: '500px',
+    margin: 'auto',
+    padding: '2rem',
+    background: '#f9f9f9',
+    borderRadius: '10px',
+    boxShadow: '0 0 10px rgba(0,0,0,0.1)',
+    fontFamily: 'Arial, sans-serif',
+  },
+  title: {
+    textAlign: 'center',
+    marginBottom: '1.5rem',
+    color: '#007bff',
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  label: {
+    marginBottom: '0.5rem',
+    fontWeight: 'bold',
+  },
+  input: {
+    padding: '0.5rem',
+    marginBottom: '1rem',
+    borderRadius: '5px',
+    border: '1px solid #ccc',
+  },
+  button: {
+    padding: '0.7rem',
+    backgroundColor: '#007bff',
+    color: 'white',
+    border: 'none',
+    borderRadius: '5px',
+    cursor: 'pointer',
+  },
+  result: {
+    marginTop: '1.5rem',
+    fontWeight: 'bold',
+    color: '#28a745',
+    textAlign: 'center',
+  },
+};
 
-## 🖼 Menu Preview
-
-![Menu Preview](menu.jpg)
-
-```
-╭─────────────────╮
-       ༒ 𝕊𝕖𝕟𝕜𝕦 ༒
-╰─────────────────╯
-╭─────────────────╮
-│ Prefix : <user-prefix>
-│ Hello, <username>  
-│ Day : <day-of-week>
-│ Date : <DD/MM/YYYY>
-│ Version : 5.2.0
-│ Plugins : 63
-│ Type : X-MD        
-╰─────────────────╯
-
-╭──[ ✨ MENUS ✨ ]─────╮
-│
-│ ⇛ menu
-│ ⇛ prem-menu
-│ ⇛ bug-menu
-╰─────────────────╯
-
-╭──[ 📃 UTILS 📃 ]──────╮
-│ 
-│ ⇛ ping
-│ ⇛ getid
-│ ⇛ sudo
-│ ⇛ tourl
-│ ⇛ owner    
-│ ⇛ fancy   
-│ ⇛ update
-│ ⇛ device 
-│ ⇛ delsudo
-│ ⇛ getsudo    
-╰─────────────────╯
-
-╭──[ 🔎 CONFIG 🔎 ]─────╮
-│
-│ ⇛ online
-│ ⇛ welcome
-│ ⇛ autotype
-│ ⇛ autoreact
-│ ⇛ setprefix
-│ ⇛ getconfig
-│ ⇛ statuslike
-│ ⇛ autorecord        
-╰─────────────────╯
-
-╭──[ ✘ GROUP ✘ ]─────╮
-│
-│ ⇛ bye
-│ ⇛ kick
-│ ⇛ purge        
-│ ⇛ mute
-│ ⇛ unmute
-│ ⇛ promote
-│ ⇛ demote
-│ ⇛ gclink      
-│ ⇛ antilink
-│ ⇛ kickall
-│ ⇛ promoteall
-│ ⇛ demoteall
-╰─────────────────╯
-
-╭──[ 💾 MEDIA 💾 ]─────╮
-│
-│ ⇛ vv 
-│ ⇛ take  
-│ ⇛ save 
-│ ⇛ photo
-│ ⇛ setpp
-│ ⇛ getpp
-│ ⇛ toaudio
-│ ⇛ sticker
-╰─────────────────╯
-
-╭──[ 🔎 SEARCH 🔎 ]─────╮
-│
-│ ⇛ senku > question
-│ ⇛ Wiki-en > topic
-│ ⇛ Wiki-fr > topic        
-╰─────────────────╯
-
-╭──[ ♫ DOWNLOADER ♫ ]──╮
-│ 
-│ ⇛ img
-│ ⇛ play
-│ ⇛ tiktok
-╰─────────────────╯
-
-╭──[ 📣 TAGS 📣 ]──────╮
-│
-│ ⇛ tag
-│ ⇛ tagadmin
-│ ⇛ tagall
-│ ⇛ settag  
-│ ⇛ respons
-╰─────────────────╯
-```
-
----
-
-## ⚡ Installation
-
-1. Clone the repository:
-
-```bash
-git clone https://github.com/Danscot/senku-xmd.git
-cd senku_xmd
-```
-
-2. Install dependencies:
-
-```bash
-npm install
-```
-
-3. Run the bot:
-
-```bash
-npm start
-```
-
----
-
-## 🔑 Authentication
-
-* Use the pairing method to connect your WhatsApp account.
-* Supports **multi-session** authentication.
-* Support **telegram pairing mode**
-
----
-
-## 🛡 Notes & Tips
-
-* **Admin Only:** Commands like `antilink`, `kick`, `promote`, `demote` require group admin privileges.
-* **Media:** Sends menu image (`menu.jpg`) and audio (`menu.mp3`) for a richer experience.
-* **Responsible Use:** Designed for **educational and personal purposes**. Avoid spamming or misuse.
-* **Custom Prefix:** Users can set a custom prefix via `setprefix`.
-
----
-
-## 📜 License
-
-MIT License – free to use, modify, and redistribute.
-
----
+export default BotWeb;
