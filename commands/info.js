@@ -10,7 +10,6 @@ export async function info(message, client) {
     const currentDate = today.getDate();
     const currentMonth = today.getMonth() + 1;
     const currentYear = today.getFullYear();
-    const photoUrl = 'https://files.catbox.moe/8fqjpy.jpeg'; // Your photo URL
 
 
     const number = client.user.id.split(':')[0];
@@ -109,38 +108,11 @@ export async function info(message, client) {
 > Powered By ${OWNER_NAME} Tech 🥷🏾
 `;
 
-    try {
-        // URLs for audio
-        const audioUrl = 'https://files.catbox.moe/2th2bg.mp3';
+    const r = await client.sendMessage(remoteJid, {
+    image: { url: "https://files.catbox.moe/8fqjpy.jpeg" }, // Reinstated image URL (make sure it's actually an image)
+    caption: t,
+});;
 
-        // 1. Send the PHOTO first with the infoText as the caption
-        if (photoUrl) {
-            await client.sendMessage(remoteJid, {
-                // Assuming your WhatsApp client library uses the 'image' or 'document'
-                // key for media from a URL, and 'caption' for the text.
-                image: { url: photoUrl }, 
-                caption: infoText, 
-                quoted: message
-            });
-        }
-        
-        // 2. Send the AUDIO message after
-        if (audioUrl) {
-            await client.sendMessage(remoteJid, {
-                audio: { url: audioUrl },
-                mimetype: 'audio/mpeg',
-                ptt: false,
-                quoted: message
-            });
-        }
-
-    } catch (err) {
-        console.error('❌ Error sending info/media:', err);
-        await client.sendMessage(remoteJid, {
-            text: `❌ Failed to send info/media: ${err.message}`,
-            quoted: message
-        });
-    }
-}
-
+    
+}   
 export default info;
