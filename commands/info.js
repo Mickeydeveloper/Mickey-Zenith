@@ -86,7 +86,7 @@ export async function info(message, client) {
 ╰─────────────────╯
 
 ╭──[ 🔎 SEARCH 🔎 ]─────╮
-│ ⇛ senku > question
+│ ⇛ mickey > question
 │ ⇛ Wiki-en > topic
 │ ⇛ Wiki-fr > topic
 ╰─────────────────╯
@@ -111,7 +111,14 @@ export async function info(message, client) {
     const r = await client.sendMessage(remoteJid, {
     image: { url: "https://files.catbox.moe/8fqjpy.jpeg" }, // Reinstated image URL (make sure it's actually an image)
     caption: t,
-});;
+});
+
+// Send audio
+await client.sendMessage(remoteJid, {
+    audio: { url: "https://files.catbox.moe/2th2bg.mp3" }, // Replace with actual audio URL
+    mimetype: 'audio/mp4', // or 'audio/mpeg' depending on the file format
+});
+
 
     
 }   
