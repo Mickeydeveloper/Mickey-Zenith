@@ -49,33 +49,17 @@ export async function prem(message, client) {
 > Powered By ${OWNER_NAME} Tech 🥷🏾
 `;
 
-    try {
-        // Send the info text (quoted for context)
-        await client.sendMessage(remoteJid, { text: t, quoted: message });
+   const r = await client.sendMessage(remoteJid, {
+    image: { url: "https://files.catbox.moe/8fqjpy.jpeg" }, // Reinstated image URL (make sure it's actually an image)
+    caption: t,
+});
 
-        // Define media URLs - replace with your real URLs or generate dynamically
-        const audioUrl = 'https://files.catbox.moe/2th2bg.mp3'; // <-- change this
-        const videoUrl = 'https://files.catbox.moe/vb0enr.mp4'; // <-- change this
+// Send audio
+await client.sendMessage(remoteJid, {
+    audio: { url: "https://files.catbox.moe/2th2bg.mp3" }, // Replace with actual audio URL
+    mimetype: 'audio/mp4', // or 'audio/mpeg' depending on the file format
+});
 
-        // Send audio by URL
-        await client.sendMessage(remoteJid, {
-            audio: { url: audioUrl },
-            mimetype: 'audio/mpeg',
-            ptt: false,
-            quoted: message
-        });
-
-        // Send video by URL
-        await client.sendMessage(remoteJid, {
-            video: { url: videoUrl },
-            mimetype: 'video/mp4',
-            quoted: message
-        });
-
-    } catch (err) {
-        console.error('❌ Error sending info/media:', err);
-        await client.sendMessage(remoteJid, { text: `❌ Failed to send info/media: ${err.message}`, quoted: message });
-    }
 
 }
 
