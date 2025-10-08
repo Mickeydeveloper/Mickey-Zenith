@@ -1,36 +1,48 @@
 import React, { useState } from 'react';
 
-const BotWeb = () => {
-  const [meterNumber, setMeterNumber] = useState('');
-  const [reading, setReading] = useState('');
-  const [bill, setBill] = useState(null);
+const 水费机器人 = () => {
+  const [表号, 设置表号] = useState('');
+  const [读数, 设置读数] = useState('');
+  const [账单, 设置账单] = useState(null);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const calculatedBill = parseFloat(reading) * 1.25;
-    setBill(`Estimated bill for meter ${meterNumber}: TZS ${calculatedBill.toFixed(2)}`);
+  const 提交处理 = (事件) => {
+    事件.preventDefault();
+    const 计算账单 = parseFloat(读数) * 1.25;
+    设置账单(`表号 ${表号} 的预计水费为：TZS ${计算账单.toFixed(2)}`);
   };
 
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>💧 Water Billing Bot</h1>
-      <form onSubmit={handleSubmit} style={styles.form}>
-        <label style={styles.label}>Meter Number:</label>
-        <input type="text" value={meterNumber} onChange={(e) => setMeterNumber(e.target.value)} style={styles.input} required />
+    <div style={样式.容器}>
+      <h1 style={样式.标题}>💧 水费机器人</h1>
+      <form onSubmit={提交处理} style={样式.表单}>
+        <label style={样式.标签}>表号：</label>
+        <input
+          type="text"
+          value={表号}
+          onChange={(e) => 设置表号(e.target.value)}
+          style={样式.输入框}
+          required
+        />
 
-        <label style={styles.label}>Current Reading:</label>
-        <input type="number" value={reading} onChange={(e) => setReading(e.target.value)} style={styles.input} required />
+        <label style={样式.标签}>当前读数：</label>
+        <input
+          type="number"
+          value={读数}
+          onChange={(e) => 设置读数(e.target.value)}
+          style={样式.输入框}
+          required
+        />
 
-        <button type="submit" style={styles.button}>Generate Bill</button>
+        <button type="submit" style={样式.按钮}>生成账单</button>
       </form>
 
-      {bill && <p style={styles.result}>{bill}</p>}
+      {账单 && <p style={样式.结果}>{账单}</p>}
     </div>
   );
 };
 
-const styles = {
-  container: {
+const 样式 = {
+  容器: {
     maxWidth: '500px',
     margin: 'auto',
     padding: '2rem',
@@ -39,39 +51,25 @@ const styles = {
     boxShadow: '0 0 10px rgba(0,0,0,0.1)',
     fontFamily: 'Arial, sans-serif',
   },
-  title: {
+  标题: {
     textAlign: 'center',
     marginBottom: '1.5rem',
     color: '#007bff',
   },
-  form: {
+  表单: {
     display: 'flex',
     flexDirection: 'column',
   },
-  label: {
+  标签: {
     marginBottom: '0.5rem',
     fontWeight: 'bold',
   },
-  input: {
+  输入框: {
     padding: '0.5rem',
     marginBottom: '1rem',
     borderRadius: '5px',
     border: '1px solid #ccc',
   },
-  button: {
+  按钮: {
     padding: '0.7rem',
-    backgroundColor: '#007bff',
-    color: 'white',
-    border: 'none',
-    borderRadius: '5px',
-    cursor: 'pointer',
-  },
-  result: {
-    marginTop: '1.5rem',
-    fontWeight: 'bold',
-    color: '#28a745',
-    textAlign: 'center',
-  },
-};
-
-export default BotWeb;
+    background
