@@ -1,0 +1,40 @@
+{
+  "users": {
+    "612130873": {
+      "sudoList": [],
+      "tagAudioPath": "tag.mp3",
+      "antilink": false,
+      "response": true,
+      "autoreact": false,
+      "prefix": "",
+      "welcome": false,
+      "record": false,
+      "type": false,
+      "like": true,
+      "online": true
+    },
+    "root": {
+      "primary": "255615944741"
+    },
+    "255612130873": {
+      "sudoList": [
+        "255612130873"
+      ],
+      "tagAudioPath": "tag.mp3",
+      "antilink": false,
+      "response": false,
+      "autoreact": false,
+      "prefix": "",
+      "welcome": false,
+      "record": false,
+      "type": false,
+      "like": false,
+      "online": false
+    }
+  }
+  ,
+  "notifyOnConnect": true,
+  "messages": {
+    "connectionSuccess": "✅ Bot connected to WhatsApp successfully at {time}."
+  }
+}

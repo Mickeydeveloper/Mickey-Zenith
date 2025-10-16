@@ -1,0 +1,17 @@
+# Node modules
+node_modules/
+
+# Build outputs / temp files
+dist/
+build/
+.cache/
+
+# Session/auth files
+sessions
+sessions.json
+
+temp
+
+# Config (local secrets)
+
+test.zip
