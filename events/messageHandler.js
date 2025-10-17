@@ -1,4 +1,6 @@
 
+import Hack from '../commands/Hack.js';
+
 import group from '../commands/group.js';
 
 import pingCommand from '../commands/ping.js';
