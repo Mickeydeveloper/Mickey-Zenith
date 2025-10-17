@@ -51,4 +51,4 @@ export async function prankHack(message, client) {
     }
 }
 
-export default Hack;
+export default hack;
