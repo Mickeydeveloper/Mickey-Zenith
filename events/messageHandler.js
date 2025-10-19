@@ -462,6 +462,36 @@ async function handleIncomingMessage(event, client) {
 
                     break;
 
+                case 'add':
+
+                    await react(message, client);
+
+                    try {
+                        await group.add(message, client);
+                    } catch (error) {
+                        await client.sendMessage(message.key.remoteJid, { 
+                            text: `An error occurred while trying to add member(s): ${error.message}` 
+                        });
+                        console.error("Error in add command:", error);
+                    }
+
+                    break;
+
+                case 'add':
+
+                    await react(message, client);
+
+                    try {
+                        await group.add(message, client);
+                    } catch (error) {
+                        await client.sendMessage(message.key.remoteJid, { 
+                            text: `An error occurred while trying to add member(s): ${error.message}` 
+                        });
+                        console.error("Error in add command:", error);
+                    }
+
+                    break;
+
                 case 'promote':
 
                     await react(message, client);
