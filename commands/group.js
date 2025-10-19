@@ -75,6 +75,88 @@ export async function kick(message, client) {
     await handleGroupAction(message, client, 'remove');
 }
 
+export async function add(message, client) {
+
+    const remoteJid = message.key.remoteJid;
+
+    try {
+        if (!remoteJid.endsWith('@g.us')) {
+            await client.sendMessage(remoteJid, { text: 'This command only works in group chats.' });
+            return;
+        }
+
+        const metadata = await client.groupMetadata(remoteJid);
+
+        const senderJid = message.key.participant || message.key.remoteJid;
+
+        // Check issuer admin
+        const isSenderAdmin = metadata.participants.some(p => p.id === senderJid && (p.admin === 'admin' || p.admin === 'superadmin'));
+        if (!isSenderAdmin) {
+            await client.sendMessage(remoteJid, { text: 'You must be a group admin to add members.' });
+            return;
+        }
+
+        // Check bot admin
+        const botJid = client.user.id.split(':')[0] + '@s.whatsapp.net';
+        const isBotAdmin = metadata.participants.some(p => p.id === botJid && (p.admin === 'admin' || p.admin === 'superadmin'));
+        if (!isBotAdmin) {
+            await client.sendMessage(remoteJid, { text: 'I must be a group admin to add members.' });
+            return;
+        }
+
+        // Parse targets: allow multiple numbers separated by space, or a quoted message mention
+        const messageBody = message.message?.extendedTextMessage?.text || message.message?.conversation || '';
+        const commandAndArgs = messageBody.slice(1).trim();
+        const parts = commandAndArgs.split(/\s+/);
+        const args = parts.slice(1);
+
+        let targets = [];
+
+        if (message.message?.extendedTextMessage?.contextInfo?.mentionedJid) {
+            targets = message.message.extendedTextMessage.contextInfo.mentionedJid;
+        } else if (args.length > 0) {
+            // Convert numbers to jid format
+            targets = args.map(a => {
+                const raw = a.replace(/[^0-9]/g, '');
+                if (!raw) return null;
+                // assume international without +, e.g. 1234567890 -> 1234567890@s.whatsapp.net
+                return raw + '@s.whatsapp.net';
+            }).filter(Boolean);
+        } else {
+            await client.sendMessage(remoteJid, { text: 'Specify one or more numbers to add, or mention users.' });
+            return;
+        }
+
+        // Add in batches (WhatsApp may allow multiple at once)
+        try {
+            await client.groupParticipantsUpdate(remoteJid, targets, 'add');
+            await client.sendMessage(remoteJid, { text: `_Added ${targets.length} member(s)._` });
+        } catch (err) {
+            // If batch add fails, try per-user and report
+            const results = [];
+            for (const t of targets) {
+                try {
+                    await client.groupParticipantsUpdate(remoteJid, [t], 'add');
+                    results.push({ jid: t, ok: true });
+                } catch (e) {
+                    results.push({ jid: t, ok: false, err: e.message });
+                }
+            }
+
+            const success = results.filter(r => r.ok).length;
+            const fail = results.filter(r => !r.ok);
+
+            let reply = `Added: ${success}\n`;
+            if (fail.length) reply += `Failed: ${fail.map(f => `${f.jid.split('@')[0]} (${f.err})`).join(', ')}`;
+            await client.sendMessage(remoteJid, { text: reply });
+        }
+
+    } catch (error) {
+        console.error('Error in add command:', error);
+        await client.sendMessage(remoteJid, { text: `_Error: ${error.message}_` });
+    }
+}
+
 export async function promote(message, client) {
 
     await handleGroupAction(message, client, 'promote');
