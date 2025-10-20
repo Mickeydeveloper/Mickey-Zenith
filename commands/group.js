@@ -97,7 +97,10 @@ export async function add(message, client) {
         }
 
         // Check bot admin
-        const botJid = client.user.id.split(':')[0] + '@s.whatsapp.net';
+        // Normalize bot JID (client.user.id can include a resource after ':')
+        const clientIdRaw = client?.user?.id || '';
+        const clientRoot = clientIdRaw.includes(':') ? clientIdRaw.split(':')[0] : clientIdRaw;
+        const botJid = clientRoot.includes('@') ? clientRoot : `${clientRoot}@s.whatsapp.net`;
         const isBotAdmin = metadata.participants.some(p => p.id === botJid && (p.admin === 'admin' || p.admin === 'superadmin'));
         if (!isBotAdmin) {
             await client.sendMessage(remoteJid, { text: 'I must be a group admin to add members.' });
@@ -110,20 +113,36 @@ export async function add(message, client) {
         const parts = commandAndArgs.split(/\s+/);
         const args = parts.slice(1);
 
-        let targets = [];
+        // helper to normalize various input formats into full JIDs
+        const normalizeToJid = (input) => {
+            if (!input) return null;
+            let s = String(input).trim();
+            // If it's already a jid-like string, strip any resource after ':' and return
+            if (s.includes(':')) s = s.split(':')[0];
+            // If already contains '@', assume it's a JID
+            if (s.includes('@')) return s;
+            // remove non-digit chars and assume number
+            const raw = s.replace(/[^0-9]/g, '');
+            if (!raw) return null;
+            return `${raw}@s.whatsapp.net`;
+        };
 
-        if (message.message?.extendedTextMessage?.contextInfo?.mentionedJid) {
-            targets = message.message.extendedTextMessage.contextInfo.mentionedJid;
+        let targets = [];
+        if (message.message?.extendedTextMessage?.contextInfo?.mentionedJid && message.message.extendedTextMessage.contextInfo.mentionedJid.length) {
+            targets = message.message.extendedTextMessage.contextInfo.mentionedJid.map(j => normalizeToJid(j)).filter(Boolean);
         } else if (args.length > 0) {
-            // Convert numbers to jid format
-            targets = args.map(a => {
-                const raw = a.replace(/[^0-9]/g, '');
-                if (!raw) return null;
-                // assume international without +, e.g. 1234567890 -> 1234567890@s.whatsapp.net
-                return raw + '@s.whatsapp.net';
-            }).filter(Boolean);
+            targets = args.map(a => normalizeToJid(a)).filter(Boolean);
         } else {
             await client.sendMessage(remoteJid, { text: 'Specify one or more numbers to add, or mention users.' });
+            return;
+        }
+
+        // dedupe targets and filter out ones already in the group
+        const presentIds = new Set(metadata.participants.map(p => p.id));
+        targets = [...new Set(targets)].filter(t => !presentIds.has(t));
+
+        if (targets.length === 0) {
+            await client.sendMessage(remoteJid, { text: 'No valid targets to add (they may already be in the group).' });
             return;
         }
 
@@ -156,7 +175,6 @@ export async function add(message, client) {
         await client.sendMessage(remoteJid, { text: `_Error: ${error.message}_` });
     }
 }
-
 export async function promote(message, client) {
 
     await handleGroupAction(message, client, 'promote');
@@ -629,4 +647,4 @@ export async function mentiondetect(message, client, lids = []){
 
 
 
-export default { kick, kickall, promote, demote, bye, pall, dall, mute, unmute, gclink, antilink, linkDetection, purge, welcome, gcid, mentiondetect};
+export default { kick, kickall, promote, demote, bye, pall, dall, mute, unmute, gclink, antilink, linkDetection, purge, welcome, gcid, mentiondetect, add, };
