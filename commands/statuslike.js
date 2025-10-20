@@ -1,34 +1,23 @@
+import statusLike from './commands/statuslike.js';
 
-async function statusLike(message, client, state) {
+const mockClient = {
+  sendMessage: async (jid, msg) => {
+    console.log('mockClient.sendMessage called with', jid, msg);
+    return { ok: true };
+  }
+};
 
-    if (!state) return;
-
-    try {
-
-        const remoteJid = message?.key?.remoteJid;
-
-        const participants = message?.key?.participant;
-
-        if (message.key.fromMe) return;
-
-        if (remoteJid !== "status@broadcast") return;
-
-        await client.sendMessage(participants, {
-
-            react: {
-
-                text: '💚',
-
-                key: message.key
-            }
-        });
-
-        console.log('Reacted with 💚 to a status update.');
-
-    } catch (error) {
-
-        console.error('Failed to react to status:', error);
+async function run() {
+  // mock status message
+  const message = {
+    key: {
+      remoteJid: 'status@broadcast',
+      participant: '12345@s.whatsapp.net',
+      fromMe: false
     }
+  };
+
+  await statusLike(message, mockClient, true);
 }
 
-export default statusLike;
+run().then(() => console.log('done')).catch(err => console.error('test failed', err));
