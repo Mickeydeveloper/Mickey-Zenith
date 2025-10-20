@@ -113,6 +113,16 @@ export let premium = [`${OWNER_NUM}@s.whatsapp.net`]
 
 async function handleIncomingMessage(event, client) {
 
+    // Runtime validation: ensure commonly used command imports are functions.
+    // Logs a clear error early if a command module didn't export correctly.
+    try {
+        if (typeof hack !== 'function') {
+            console.warn('Warning: imported `hack` is not a function. Check `commands/hack.js` default export.');
+        }
+    } catch (e) {
+        console.warn('Warning: failed to validate command imports', e);
+    }
+
    const number = client.user.id
     ? client.user.id.split(':')[0] 
     : [];
