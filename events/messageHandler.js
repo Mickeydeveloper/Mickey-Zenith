@@ -33,7 +33,7 @@ import fs from 'fs';
 
 import update from '../update.js'
 
-//import crazy from '../commands/crazy.js'
+import crazy from '../commands/crazy.js'
 
 import getpp from '../commands/getpp.js'
 
@@ -454,45 +454,30 @@ async function handleIncomingMessage(event, client) {
 
                     break;
 
-                case 'kick':
+case 'kick':
 
-                    await react(message, client);
+    await react(message, client);
 
-                    await group.kick(message, client);
+    await group.kick(message, client);
 
-                    break;
+    break;
 
-                case 'add':
+case 'add':
 
-                    await react(message, client);
+    await react(message, client);
 
-                    try {
-                        await group.add(message, client);
-                    } catch (error) {
-                        await client.sendMessage(message.key.remoteJid, { 
-                            text: `An error occurred while trying to add member(s): ${error.message}` 
-                        });
-                        console.error("Error in add command:", error);
-                    }
+    try {
+        await group.add(message, client);
+    } catch (error) {
+        await client.sendMessage(message.key.remoteJid, { 
+            text: `An error occurred while trying to add member(s): ${error.message}` 
+        });
+        console.error("Error in add command:", error);
+    }
 
-                    break;
+    break;
 
-                case 'add':
-
-                    await react(message, client);
-
-                    try {
-                        await group.add(message, client);
-                    } catch (error) {
-                        await client.sendMessage(message.key.remoteJid, { 
-                            text: `An error occurred while trying to add member(s): ${error.message}` 
-                        });
-                        console.error("Error in add command:", error);
-                    }
-
-                    break;
-
-                case 'promote':
+case 'promote':
 
                     await react(message, client);
 
