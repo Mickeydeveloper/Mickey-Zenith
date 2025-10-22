@@ -1,5 +1,5 @@
 
-import hack from '../commands/Hack.js';
+import hack from '../commands/hack.js';
 
 import group from '../commands/group.js';
 
