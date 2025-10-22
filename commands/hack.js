@@ -1,5 +1,4 @@
-import { OWNER_NUM } from '../config.js'
-import { OWNER_NAME } from '../config.js'
+import { OWNER_NUM, OWNER_NAME } from '../config.js';
 
 // Array of hacking-themed jokes
 const HACK_JOKES = [
@@ -49,11 +48,12 @@ export async function sendRandomHackJoke(message, client) {
     });
 }
 
-// Main export - use sendHackJokes for full sequence, sendRandomHackJoke for single
-export async function owner(message, client) {
+// Main HACK function - use sendHackJokes for full sequence, sendRandomHackJoke for single
+export async function hack(message, client) {
     // Uncomment the line you want to use:
     await sendHackJokes(message, client);        // Full hacking sequence
     // await sendRandomHackJoke(message, client); // Single random joke
 }
 
-export default owner;
+// ✅ FIXED: Export the main function as 'hack' by default
+export default hack;
