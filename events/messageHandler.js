@@ -32,7 +32,7 @@ import fs from 'fs';
 
 import update from '../update.js'
 
-import crazy from '../commands/crazy.js'
+//import crazy from '../commands/crazy.js'
 
 import getpp from '../commands/getpp.js'
 
@@ -106,9 +106,6 @@ import { OWNER_NUM } from '../config.js'
 
 // In your main file
 import hack from '../commands/hack.js';
-
-// Use it
-await hack(message, client); // Runs full hacking sequence
 
 
 export let creator = [`${OWNER_NUM}@s.whatsapp.net`]
