@@ -7,7 +7,7 @@ export async function react(message, client) {
 
         {
             react: {
-                text: '🥷🏽',
+                text: '🥱',
 
                 key: message.key
             }
