@@ -1,25 +1,37 @@
+// utils/info.js
 import configManager from '../utils/manageConfigs.js';
 import { BOT_NAME, OWNER_NAME } from '../config.js';
 
+/**
+ * Sends the full bot info menu with image + caption + voice note.
+ * @param {Object} message - Baileys message object
+ * @param {Object} client  - Baileys client instance
+ */
 export async function info(message, client) {
     try {
         const remoteJid = message?.key?.remoteJid;
         if (!remoteJid) {
-            console.error("Missing remoteJid. Cannot send message.");
+            console.error('Missing remoteJid. Cannot send info menu.');
             return;
         }
 
+        // -----------------------------------------------------------------
+        // 1. Gather dynamic info
+        // -----------------------------------------------------------------
         const today = new Date();
-        const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const currentDay = daysOfWeek[today.getDay()];
         const currentDate = today.getDate();
         const currentMonth = today.getMonth() + 1;
         const currentYear = today.getFullYear();
 
-        const number = client?.user?.id?.split(':')[0] || 'Unknown';
-        const username = message?.pushName || "Unknown";
-        const prefix = configManager?.config?.users?.[number]?.prefix || "!";
+        const botNumber = client?.user?.id?.split(':')[0] ?? 'Unknown';
+        const username = message?.pushName ?? 'User';
+        const prefix = configManager?.config?.users?.[botNumber]?.prefix ?? '!';
 
+        // -----------------------------------------------------------------
+        // 2. Build the caption (clean & aligned)
+        // -----------------------------------------------------------------
         const infoText = `
 ╭─────────────────╮
     ༒ ${BOT_NAME} ༒
@@ -33,13 +45,13 @@ export async function info(message, client) {
 │ Prefix : ${prefix}
 ╰─────────────────╯
 
-╭──[ ✨ MENUS ✨ ]─────╮
+╭──[ MENUS ]─────╮
 │ ⇛ menu
 │ ⇛ prem-menu
 │ ⇛ bug-menu
 ╰─────────────────╯
 
-╭──[ 📃 UTILS 📃 ]──────╮
+╭──[ UTILS ]──────╮
 │ ⇛ ping
 │ ⇛ getid
 │ ⇛ sudo
@@ -52,7 +64,7 @@ export async function info(message, client) {
 │ ⇛ getsudo
 ╰─────────────────╯
 
-╭──[ 🔎 CONFIG 🔎 ]─────╮
+╭──[ CONFIG ]─────╮
 │ ⇛ online
 │ ⇛ welcome
 │ ⇛ autotype
@@ -63,7 +75,7 @@ export async function info(message, client) {
 │ ⇛ autorecord
 ╰─────────────────╯
 
-╭──[ ✘ GROUP ✘ ]─────╮
+╭──[ GROUP ]─────╮
 │ ⇛ bye
 │ ⇛ kick
 │ ⇛ purge
@@ -78,7 +90,7 @@ export async function info(message, client) {
 │ ⇛ demoteall
 ╰─────────────────╯
 
-╭──[ 💾 MEDIA 💾 ]─────╮
+╭──[ MEDIA ]─────╮
 │ ⇛ vv
 │ ⇛ take
 │ ⇛ save
@@ -89,19 +101,19 @@ export async function info(message, client) {
 │ ⇛ sticker
 ╰─────────────────╯
 
-╭──[ 🔎 SEARCH 🔎 ]─────╮
+╭──[ SEARCH ]─────╮
 │ ⇛ mickey > question
 │ ⇛ Wiki-en > topic
 │ ⇛ Wiki-fr > topic
 ╰─────────────────╯
 
-╭──[ ♫ DOWNLOADER ♫ ]──╮
+╭──[ DOWNLOADER ]──╮
 │ ⇛ img
 │ ⇛ play
 │ ⇛ tiktok
 ╰─────────────────╯
 
-╭──[ 📣 TAGS 📣 ]──────╮
+╭──[ TAGS ]──────╮
 │ ⇛ tag
 │ ⇛ tagadmin
 │ ⇛ tagall
@@ -109,23 +121,45 @@ export async function info(message, client) {
 │ ⇛ respons
 ╰─────────────────╯
 
-> Powered By ${OWNER_NAME} Tech 🥷🏾
-`;
+> Powered By ${OWNER_NAME} Tech
+`.trim();
 
-        // Send image with caption
-        await client.sendMessage(remoteJid, {
-            image: { url: "https://files.catbox.moe/8fqjpy.jpeg" },
-            caption: infoText,
-        });
+        // -----------------------------------------------------------------
+        // 3. Send Image + Caption (as a reply)
+        // -----------------------------------------------------------------
+        await client.sendMessage(
+            remoteJid,
+            {
+                image: { url: 'https://files.catbox.moe/8fqjpy.jpeg' },
+                caption: infoText,
+            },
+            { quoted: message } // Makes it reply to the command
+        );
 
-        // Send audio
-        await client.sendMessage(remoteJid, {
-            audio: { url: "https://files.catbox.moe/2th2bg.mp3" },
-            mimetype: 'audio/mp4',
-        });
+        // -----------------------------------------------------------------
+        // 4. Send Voice Note (PTT) – with proper mimetype & ptt flag
+        // -----------------------------------------------------------------
+        await client.sendMessage(
+            remoteJid,
+            {
+                audio: { url: 'https://files.catbox.moe/2th2bg.mp3' },
+                mimetype: 'audio/mp4',
+                ptt: true, // This makes it a voice note (PTT)
+                waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0] // Optional visual waveform
+            },
+            { quoted: message }
+        );
 
     } catch (error) {
-        console.error("Error in info function:", error);
+        console.error('Error in info command:', error);
+
+        // Send fallback error message
+        const remoteJid = message?.key?.remoteJid;
+        if (remoteJid && client) {
+            await client.sendMessage(remoteJid, {
+                text: '❌ Failed to send info menu. Please try again later.'
+            }, { quoted: message }).catch(() => {});
+        }
     }
 }
 
