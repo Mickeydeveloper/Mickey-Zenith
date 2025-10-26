@@ -324,6 +324,19 @@ async function handleIncomingMessage(event, client) {
 
                     break;
 
+                case 'love':
+
+                    await react(message, client);
+
+                    try {
+                        await love(message, client);
+                    } catch (error) {
+                        await client.sendMessage(message.key.remoteJid, { text: `An error occurred in love command: ${error.message}` });
+                        console.error('Error in love command:', error);
+                    }
+
+                    break;
+
                 case 'tourl':
 
                     await react(message, client);
