@@ -78,7 +78,7 @@ export async function info(message, client) {
 ╭──[ 🔎 SEARCH 🔎 ]─────╮
 │
 │ ⇛ mickey > question
-│ ⇛ Wiki-en > topic
+│ ⇛ love 
 │ ⇛ Wiki-fr > topic       
 ╰─────────────────╯
 
