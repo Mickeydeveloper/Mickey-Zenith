@@ -1,0 +1,43 @@
+{
+  "name": "mickey-zenith",
+  "version": "5.2.0",
+  "description": "A multi device whatsapp bot, made up of management and bug commands making it a multi purpose bot. Made up using unofficial whatsapp API SENKU BAIL based on whiskeysocket bailey",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "restart": "rm -r auth_info_baileys || node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mickeydeveloper/Mickey-Zenith.git"
+  },
+  "keywords": [
+    "senku",
+    "Danscot",
+    "bug",
+    "bot",
+    "bailey",
+    "whatsapp"
+  ],
+  "author": "Mickey",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Mickeydeveloper/Mickey-Zenith/issues"
+  },
+  "homepage": "https://github.com/Mickeydeveloper/Mickey-Zenith#readme",
+  "dependencies": {
+    "axios-retry": "^4.5.0",
+    "bailey": "https://github.com/Danscot/senku_bail_mod/archive/refs/tags/V1.5.0.tar.gz",
+    "fluent-ffmpeg": "^2.1.3",
+    "node-fetch": "^3.3.2",
+    "node-telegram-bot-api": "^0.66.0",
+    "uuid": "^11.1.0",
+    "wa-sticker-formatter": "^4.4.4",
+    "acrcloud": "^1.4.0",
+    "yt-search": "^2.10.3"
+  },
+  "devDependencies": {
+    "ts-jest": "^29.1.1"
+  }
+}
