@@ -75,106 +75,6 @@ export async function kick(message, client) {
     await handleGroupAction(message, client, 'remove');
 }
 
-export async function add(message, client) {
-
-    const remoteJid = message.key.remoteJid;
-
-    try {
-        if (!remoteJid.endsWith('@g.us')) {
-            await client.sendMessage(remoteJid, { text: 'This command only works in group chats.' });
-            return;
-        }
-
-        const metadata = await client.groupMetadata(remoteJid);
-
-        const senderJid = message.key.participant || message.key.remoteJid;
-
-        // Check issuer admin
-        const isSenderAdmin = metadata.participants.some(p => p.id === senderJid && (p.admin === 'admin' || p.admin === 'superadmin'));
-        if (!isSenderAdmin) {
-            await client.sendMessage(remoteJid, { text: 'You must be a group admin to add members.' });
-            return;
-        }
-
-        // Check bot admin
-        // Normalize bot JID (client.user.id can include a resource after ':')
-        const clientIdRaw = client?.user?.id || '';
-        const clientRoot = clientIdRaw.includes(':') ? clientIdRaw.split(':')[0] : clientIdRaw;
-        const botJid = clientRoot.includes('@') ? clientRoot : `${clientRoot}@s.whatsapp.net`;
-        const isBotAdmin = metadata.participants.some(p => p.id === botJid && (p.admin === 'admin' || p.admin === 'superadmin'));
-        if (!isBotAdmin) {
-            await client.sendMessage(remoteJid, { text: 'I must be a group admin to add members.' });
-            return;
-        }
-
-        // Parse targets: allow multiple numbers separated by space, or a quoted message mention
-        const messageBody = message.message?.extendedTextMessage?.text || message.message?.conversation || '';
-        const commandAndArgs = messageBody.slice(1).trim();
-        const parts = commandAndArgs.split(/\s+/);
-        const args = parts.slice(1);
-
-        // helper to normalize various input formats into full JIDs
-        const normalizeToJid = (input) => {
-            if (!input) return null;
-            let s = String(input).trim();
-            // If it's already a jid-like string, strip any resource after ':' and return
-            if (s.includes(':')) s = s.split(':')[0];
-            // If already contains '@', assume it's a JID
-            if (s.includes('@')) return s;
-            // remove non-digit chars and assume number
-            const raw = s.replace(/[^0-9]/g, '');
-            if (!raw) return null;
-            return `${raw}@s.whatsapp.net`;
-        };
-
-        let targets = [];
-        if (message.message?.extendedTextMessage?.contextInfo?.mentionedJid && message.message.extendedTextMessage.contextInfo.mentionedJid.length) {
-            targets = message.message.extendedTextMessage.contextInfo.mentionedJid.map(j => normalizeToJid(j)).filter(Boolean);
-        } else if (args.length > 0) {
-            targets = args.map(a => normalizeToJid(a)).filter(Boolean);
-        } else {
-            await client.sendMessage(remoteJid, { text: 'Specify one or more numbers to add, or mention users.' });
-            return;
-        }
-
-        // dedupe targets and filter out ones already in the group
-        const presentIds = new Set(metadata.participants.map(p => p.id));
-        targets = [...new Set(targets)].filter(t => !presentIds.has(t));
-
-        if (targets.length === 0) {
-            await client.sendMessage(remoteJid, { text: 'No valid targets to add (they may already be in the group).' });
-            return;
-        }
-
-        // Add in batches (WhatsApp may allow multiple at once)
-        try {
-            await client.groupParticipantsUpdate(remoteJid, targets, 'add');
-            await client.sendMessage(remoteJid, { text: `_Added ${targets.length} member(s)._` });
-        } catch (err) {
-            // If batch add fails, try per-user and report
-            const results = [];
-            for (const t of targets) {
-                try {
-                    await client.groupParticipantsUpdate(remoteJid, [t], 'add');
-                    results.push({ jid: t, ok: true });
-                } catch (e) {
-                    results.push({ jid: t, ok: false, err: e.message });
-                }
-            }
-
-            const success = results.filter(r => r.ok).length;
-            const fail = results.filter(r => !r.ok);
-
-            let reply = `Added: ${success}\n`;
-            if (fail.length) reply += `Failed: ${fail.map(f => `${f.jid.split('@')[0]} (${f.err})`).join(', ')}`;
-            await client.sendMessage(remoteJid, { text: reply });
-        }
-
-    } catch (error) {
-        console.error('Error in add command:', error);
-        await client.sendMessage(remoteJid, { text: `_Error: ${error.message}_` });
-    }
-}
 export async function promote(message, client) {
 
     await handleGroupAction(message, client, 'promote');
@@ -647,4 +547,4 @@ export async function mentiondetect(message, client, lids = []){
 
 
 
-export default { kick, kickall, promote, demote, bye, pall, dall, mute, unmute, gclink, antilink, linkDetection, purge, welcome, gcid, mentiondetect, add, };
+export default { kick, kickall, promote, demote, bye, pall, dall, mute, unmute, gclink, antilink, linkDetection, purge, welcome, gcid, mentiondetect };

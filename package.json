@@ -36,6 +36,8 @@
     "wa-sticker-formatter": "^4.4.4",
     "acrcloud": "^1.4.0",
     "yt-search": "^2.10.3"
+    ,
+    "ytdl-core": "^4.11.0"
   },
   "devDependencies": {
     "ts-jest": "^29.1.1"

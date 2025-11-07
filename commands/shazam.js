@@ -9,13 +9,13 @@ if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR);
 
 async function identifySong(buffer) {
   const acr = new acrcloud({
-    host: 'identify-us-west-2.acrcloud.com',
-    access_key: '4ee38e62e85515aeb3d26fb741',
-    access_secret: 'KZd3cUQoOYSmZQn1n5ACW5XSbqGlKLhg6G8S8EvJ',
+    host: 'identify-eu-west-1.acrcloud.com',
+    access_key: 'c35c497b545b37a902ebc1258ea0f617',
+    access_secret: '39Ev6RQyHnRNqJ4RXbgE0u7TVMQ2eFpKsLJ9vf3j',
     data_type: 'audio',
-    audio_format: 'raw',
-    sample_rate: 44100,
-    audio_channels: 2
+    audio_format: 'wav',  // Changed to wav for better recognition
+    sample_rate: 48000,   // Increased sample rate
+    audio_channels: 1     // Mono channel for clearer recognition
   });
 
   // Try recognition up to 2 times
@@ -49,9 +49,26 @@ export async function shazam(message, client) {
   const fromJid = message.key.remoteJid;
   const quoted = message.message?.extendedTextMessage?.contextInfo?.quotedMessage;
 
-  if (!quoted || (!quoted.audioMessage && !quoted.videoMessage)) {
+  if (!quoted) {
     await client.sendMessage(fromJid, {
-      text: '🎵 *Reply to a short audio or video message (10–20 seconds) to identify the song.*'
+      text: `🎵 *Shazam - Music Recognition*\n\n*How to use:*\n1️⃣ Reply to an audio/video with .shazam\n2️⃣ Wait for analysis\n3️⃣ Get song details!\n\n*Tips:*\n- Use clear audio (10-20 seconds)\n- Include song chorus/vocals\n- Avoid noisy backgrounds`
+    }, { quoted: message });
+    return;
+  }
+
+  // Check media type and extract the correct message
+  let mediaMessage = null;
+  let mediaType = null;
+
+  if (quoted.audioMessage) {
+    mediaMessage = quoted.audioMessage;
+    mediaType = "audio";
+  } else if (quoted.videoMessage) {
+    mediaMessage = quoted.videoMessage;
+    mediaType = "video";
+  } else {
+    await client.sendMessage(fromJid, {
+      text: `❌ Please reply to an *audio* or *video* message.\n\n_Example: Reply to a song/video with .shazam_`
     }, { quoted: message });
     return;
   }
@@ -71,43 +88,57 @@ export async function shazam(message, client) {
       return;
     }
 
+    await client.sendMessage(fromJid, { 
+      text: `🎵 Analyzing ${mediaType}...\n_This may take a few seconds..._` 
+    }, { quoted: message });
+
     const stream = await downloadMediaMessage(
       { message: quoted },
-      'stream',
+      'buffer',  // Changed to buffer for better handling
       {},
       { logger: console }
     );
 
-    const writeStream = fs.createWriteStream(filePath);
-    stream.pipe(writeStream);
-    await new Promise(resolve => writeStream.on('finish', resolve));
+    // Write buffer to file
+    fs.writeFileSync(filePath, stream);
 
     // Read the audio buffer
     let buffer = fs.readFileSync(filePath);
     
-    // Take a sample from the middle of the audio (usually contains the main part of the song)
-    const MAX_SIZE = 10 * 1024 * 1024; // Increased to 10MB for better recognition
+    // Take multiple samples from the audio for better recognition
+    const MAX_SIZE = 5 * 1024 * 1024; // 5MB per sample
+    let samples = [];
+    
     if (buffer.length > MAX_SIZE) {
-      const startPos = Math.floor((buffer.length - MAX_SIZE) / 2);
-      buffer = buffer.slice(startPos, startPos + MAX_SIZE);
+      // Take sample from start, middle, and end
+      samples.push(buffer.slice(0, MAX_SIZE));
+      const midStart = Math.floor((buffer.length - MAX_SIZE) / 2);
+      samples.push(buffer.slice(midStart, midStart + MAX_SIZE));
+      samples.push(buffer.slice(-MAX_SIZE));
+    } else {
+      samples.push(buffer);
     }
 
-    // First try to identify
-    let matchedSong = await identifySong(buffer);
+    // Try to identify using multiple samples
+    let matchedSong = null;
+    for (const sample of samples) {
+      matchedSong = await identifySong(sample);
+      if (matchedSong) break;
+    }
     
-    // If first attempt fails, try with a different section of the audio
-    if (!matchedSong && buffer.length > MAX_SIZE) {
-      console.log('[SHZ] First attempt failed, trying with different audio section...');
+    if (!matchedSong) {
+      console.log('[SHZ] All recognition attempts failed');
       buffer = buffer.slice(0, MAX_SIZE); // Try start of the file instead
       matchedSong = await identifySong(buffer);
     }    if (!matchedSong) {
       await client.sendMessage(fromJid, {
-        text: '❌ *Song could not be recognized.*\n\n' +
-             'Tips for better recognition:\n' +
-             '• Send a 10-20 second clip\n' +
-             '• Include the chorus or most recognizable part\n' +
-             '• Avoid clips with too much talking/noise\n' +
-             '• Make sure the audio is clear and not distorted'
+        text: `❌ *Could not recognize ${mediaType}*\n\n` +
+             '🔍 *Try these tips:*\n' +
+             '• Use a 10-20 second clip\n' +
+             '• Include song chorus or main part\n' +
+             '• Reduce background noise\n' +
+             '• Ensure clear audio quality\n\n' +
+             '_Reply to another audio/video to try again_'
       }, { quoted: message });
       return;
     }

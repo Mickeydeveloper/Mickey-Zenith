@@ -54,7 +54,7 @@ export async function play(message, client) {
 
     const formattedViews = formatViews(views)
     const channel = author.name ? author.name : (author || "Unknown")
-    const infoMessage = `「✦」Downloading *<${title}>*\n\n> ✧ Channel » *${channel}*\n> ✰ Views » *${formattedViews}*\n> ⴵ Duration » *${timestamp}*\n> ✐ Published » *${ago}*`
+    const infoMessage = `⌛ *${title}*\n▶️ ${channel} • ${timestamp}`
 
     let thumbBuffer = null
     try {
@@ -94,6 +94,13 @@ export async function play(message, client) {
         }
       }
 
+      // Construct the audio message
+      const audioMessage = {
+        audio: { url: result },
+        mimetype: 'audio/mp4',
+        fileName: `${fileTitle}.mp3`,
+        ...(thumbnailBuffer ? { thumbnail: thumbnailBuffer } : {})
+      }
       
       await client.sendMessage(remoteJid, audioMessage, { quoted: message })
     } catch (e) {

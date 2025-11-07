@@ -178,6 +178,64 @@ async function startSession(targetNumber, handler, n) {
                 }
             });
 
+            // Setup global error reporting to owner (only once per process)
+            try {
+                if (!global._ownerErrorReporter) {
+                    let notifying = false;
+
+                    const sendOwnerError = async (err, type = 'error') => {
+                        try {
+                            if (notifying) return;
+                            notifying = true;
+                            const hostName = process.env.COMPUTERNAME || process.env.HOSTNAME || 'unknown-host';
+                            const header = `*Automated Error Report*\nType: ${type}\nHost: ${hostName}\n`;
+                            const stack = err && (err.stack || JSON.stringify(err, Object.getOwnPropertyNames(err))) || String(err);
+                            // Trim to avoid extremely long messages
+                            const maxLen = 6000;
+                            const body = (header + '\n' + stack).slice(0, maxLen);
+                            await notifyOwner(sock, body);
+                        } catch (notifyErr) {
+                            // avoid infinite loop if notifyOwner fails
+                            console.warn('notifyOwner failed while reporting error:', notifyErr && notifyErr.message ? notifyErr.message : notifyErr);
+                        } finally {
+                            notifying = false;
+                        }
+                    };
+
+                    process.on('uncaughtException', (err) => {
+                        console.error('UncaughtException:', err && err.stack ? err.stack : err);
+                        // fire-and-forget
+                        sendOwnerError(err, 'uncaughtException');
+                    });
+
+                    process.on('unhandledRejection', (reason) => {
+                        console.error('UnhandledRejection:', reason && reason.stack ? reason.stack : reason);
+                        sendOwnerError(reason, 'unhandledRejection');
+                    });
+
+                    // Optionally forward console.error messages as reports as well
+                    const originalConsoleError = console.error.bind(console);
+                    console.error = (...args) => {
+                        try {
+                            originalConsoleError(...args);
+                            // Compose a succinct message
+                            const message = args.map(a => (typeof a === 'string' ? a : (a && a.stack) ? a.stack : JSON.stringify(a))).join(' ');
+                            // don't report if it's the owner notify itself to avoid recursion
+                            if (!/Automated Error Report/.test(message)) {
+                                sendOwnerError(message, 'console.error');
+                            }
+                        } catch (e) {
+                            // fallback to original
+                            originalConsoleError('Error in console.error override:', e);
+                        }
+                    };
+
+                    global._ownerErrorReporter = true;
+                }
+            } catch (e) {
+                console.warn('Failed to setup owner error reporter:', e && e.message ? e.message : e);
+            }
+
 
             setTimeout(async () => {
 

