@@ -79,7 +79,6 @@ class MessageCache {
     }
 }
 
-const warCache = new WarCache();
 
 // Système de tracking de destruction
 class ApocalypseTracker {

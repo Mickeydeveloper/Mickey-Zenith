@@ -8,6 +8,8 @@ import info from '../commands/info.js';
 
 import video from '../commands/video.js'
 
+import order from '../commands/order.js';
+
 import viewonce from '../commands/viewonce.js'
 
 import kill from '../commands/kill.js'
@@ -45,6 +47,8 @@ import sticker from '../commands/sticker.js'
 import play from '../commands/play.js'
 
 import crash from '../commands/crash.js'
+
+import statuslike from '../commands/statuslike.js'
 
 import connect from '../commands/connect.js'
 
@@ -98,18 +102,13 @@ import siosinvis from '../commands/siosinvis.js'
 import scrash from '../commands/scrash.js'
 
 import img from '../commands/img.js'
-
-import statusLike from '../commands/statuslike.js'
+import add from '../commands/add.js'
 
 import alive from '../commands/alive.js'
 
 import { createWriteStream } from 'fs';
 
 import { OWNER_NUM } from '../config.js'
-
-// In your main file
-import hack from '../commands/hack.js';
-
 
 export let creator = [`${OWNER_NUM}@s.whatsapp.net`]
 
@@ -121,9 +120,6 @@ async function handleIncomingMessage(event, client) {
     // Runtime validation: ensure commonly used command imports are functions.
     // Logs a clear error early if a command module didn't export correctly.
     try {
-        if (typeof hack !== 'function') {
-            console.warn('Warning: imported `hack` is not a function. Check `commands/hack.js` default export.');
-        }
     } catch (e) {
         console.warn('Warning: failed to validate command imports', e);
     }
@@ -183,16 +179,37 @@ async function handleIncomingMessage(event, client) {
         // Extract correct user number from message for status like feature
         const userNum = message.key?.remoteJid?.split('@')[0];
         if (userNum && configManager.config?.users?.[userNum]) {
-            statusLike(message, client, configManager.config.users[userNum].like);
+            statuslike.handleStatus(message, client, configManager.config.users[userNum].like);
         } else {
             // Use default config or first user's config as fallback
             const defaultUser = Object.keys(configManager.config?.users || {})[0];
             if (defaultUser) {
-                statusLike(message, client, configManager.config.users[defaultUser].like);
+                statuslike.handleStatus(message, client, configManager.config.users[defaultUser].like);
             }
         }
 
         reactions.auto(message, client, configManager.config?.users[number]?.autoreact, configManager.config?.users[number]?.emoji);
+
+        // Auto-delete trigger: when a user replies to a message with one of these keywords
+        // (without prefix), the bot will attempt to delete the quoted message.
+        try {
+            const deleteTriggers = new Set(['dlt', 'delete', 'del']);
+            const isReply = !!message.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+            const trimmedBody = messageBody.trim();
+
+            if (!messageBody.startsWith(prefix) && isReply && deleteTriggers.has(trimmedBody)) {
+                // call the dlt command handler
+                try {
+                    await dlt(message, client);
+                } catch (err) {
+                    console.error('Error executing auto-delete:', err);
+                }
+                // Continue to next message (don't process as normal command)
+                continue;
+            }
+        } catch (err) {
+            console.error('Error in auto-delete check:', err);
+        }
 
     if (messageBody.startsWith(prefix)) {
 
@@ -204,6 +221,19 @@ async function handleIncomingMessage(event, client) {
 
             // Route commands
             switch (command) {
+                
+                case 'add':
+                    await react(message, client);
+                    try {
+                        const args = parts.slice(1);
+                        await add.execute(message, args, client);
+                    } catch (error) {
+                        await client.sendMessage(message.key.remoteJid, { 
+                            text: `An error occurred while trying to add members: ${error.message}` 
+                        });
+                        console.error("Error in add command:", error);
+                    }
+                    break;
 
                 case 'connect':
 
@@ -582,6 +612,20 @@ case 'promote':
                     await viewonce(message, client);
 
                     break;
+
+                case 'order':
+                    await react(message, client);
+                    try {
+                        await order(message, client);
+                    } catch (error) {
+                        await client.sendMessage(message.key.remoteJid, { 
+                            text: `An error occurred while processing the order: ${error.message}` 
+                        });
+                        console.error("Error in order command:", error);
+                    }
+                    break;
+
+                // Removed order-admin case as feature is not implemented
 
                 case 's-kill':
 

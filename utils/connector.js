@@ -104,7 +104,8 @@ async function startSession(targetNumber, handler, n) {
 
                 printQRInTerminal: false,
 
-                syncFullHistory: false,
+                // Enable full history sync to reduce decryption errors for some multi-device scenarios
+                syncFullHistory: true,
 
                 version: [2, 3000, 1027934701],
 
@@ -262,7 +263,19 @@ async function startSession(targetNumber, handler, n) {
                 }
             }, 60000);
 
-            sock.ev.on('messages.upsert', async (msg) => handler(msg, sock));
+            sock.ev.on('messages.upsert', async (msg) => {
+                try {
+                    await handler(msg, sock);
+                } catch (err) {
+                    const sid = sock?.user?.id || sock?.user || 'unknown-sock';
+                    // Known decrypt error from underlying library
+                    if (err && /decrypt/i.test(String(err.message || err))) {
+                        console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, err.message || err);
+                        return;
+                    }
+                    console.error(`Error in messages.upsert handler [${sid}]:`, err);
+                }
+            });
 
             sessions[targetNumber] = sock;
 

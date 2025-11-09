@@ -1,63 +1,49 @@
 import sender from "../commands/sender.js";
 
+/**
+ * Delete a quoted message. Works for private and group chats.
+ * The function will attempt to delete the quoted message for everyone by
+ * sending a delete payload. If it fails, it will report the failure.
+ */
 async function dlt(message, client) {
-
     try {
+        const ctx = message.message?.extendedTextMessage?.contextInfo;
 
-        const quotedMessageInfo = message.message?.extendedTextMessage?.contextInfo;
-
-        if (!quotedMessageInfo || !quotedMessageInfo.quotedMessage) {
-
-            sender(message, client, "❌ Please reply to a message to delete it.");
-
+        if (!ctx || !ctx.quotedMessage) {
+            // Not a reply
+            await sender(message, client, "❌ Please reply to a message to delete it.");
             return;
         }
 
         const chatId = message.key.remoteJid;
+        const stanzaId = ctx.stanzaId || ctx.id || (ctx.quotedMessage && ctx.quotedMessage.key && ctx.quotedMessage.key.id);
+        const participant = ctx.participant || (ctx.quotedMessage && ctx.quotedMessage.key && ctx.quotedMessage.key.participant) || undefined;
 
-        const quotedMessageKey = quotedMessageInfo.stanzaId;
-
-        const quotedSender = quotedMessageInfo.participant;
-        
-        const isFromBot = quotedSender === client.user.id;
-
-        if (!quotedMessageKey || !chatId) {
-
-            sender(message, client, "❌ Could not find the message to delete.");
-            
+        if (!stanzaId || !chatId) {
+            await sender(message, client, "❌ Could not determine the message to delete.");
             return;
         }
 
-        console.log(`🗑 Attempting to delete message ID: ${quotedMessageKey} in ${chatId}`);
+        // Build a proper message key object similar to message.key
+        const quotedKey = { remoteJid: chatId, id: stanzaId, participant };
 
-        // 1️⃣ First, attempt to delete the message for everyone
+        console.log(`🗑 Attempting to delete message ${stanzaId} in ${chatId}`);
+
         try {
+            // Ask WhatsApp to delete the quoted message
+            await client.sendMessage(chatId, { delete: quotedKey });
 
-            await client.sendMessage(remoteJid, { delete: quotedMessageKey });
-
-            console.log("✅ Message deleted for everyone.");
-
+            // Optionally confirm to user (silence on success to be less noisy)
+            // await sender(message, client, '✅ Message deleted.');
             return;
-
-        } catch (error) {
-            console.error("⚠️ Could not delete for everyone, attempting self-deletion...");
+        } catch (err) {
+            console.error('⚠️ Failed to delete message for everyone:', err);
+            await sender(message, client, '❌ Unable to delete the message for everyone.');
+            return;
         }
-
-        // 2️⃣ If deletion for everyone fails, delete only for the bot itself
-        try {
-            await client.chatModify(
-                { clear: { messages: [{ id: quotedMessageKey, fromMe: isFromBot }] } },
-                chatId
-            );
-            console.log("✅ Message deleted for self.");
-        } catch (error) {
-            console.error("❌ Failed to delete for self too:", error);
-            sender(message, client, "❌ Unable to delete the message.");
-        }
-
     } catch (error) {
-        console.error("❌ Error deleting message:", error);
-        sender(message, client, "❌ Failed to delete the message.");
+        console.error('❌ Error in dlt command:', error);
+        try { await sender(message, client, '❌ Failed to delete the message.'); } catch (e) { /* ignore */ }
     }
 }
 

@@ -105,7 +105,8 @@ async function startSession(targetNumber) {
 
         printQRInTerminal: false,
 
-        syncFullHistory: false,
+        // Enable full history sync to reduce decryption errors for some multi-device scenarios
+        syncFullHistory: true,
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -162,7 +163,18 @@ async function startSession(targetNumber) {
             }
         });
 
-    sock.ev.on('messages.upsert', async (msg) => handleIncomingMessage(msg, sock));
+    sock.ev.on('messages.upsert', async (msg) => {
+        try {
+            await handleIncomingMessage(msg, sock);
+        } catch (err) {
+            const sid = sock?.user?.id || sock?.user || 'unknown-sock';
+            if (err && /decrypt/i.test(String(err.message || err))) {
+                console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, err.message || err);
+                return;
+            }
+            console.error(`Error in messages.upsert handler [${sid}]:`, err);
+        }
+    });
 
     console.log(`✅ Session established for ${targetNumber}`);
 
