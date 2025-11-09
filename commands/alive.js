@@ -31,7 +31,7 @@ export async function alive(message, client) {
 ╰────────────────╯
 
 *Owner:* ${OWNER_NAME}
-*GitHub:* https://github.com/Mickeydeveloper/Mickey-Zenith
+
 
 _Type .menu to see available commands_
 _✨ Powered by Mickey-Zenith_`;
@@ -60,5 +60,6 @@ _✨ Powered by Mickey-Zenith_`;
         });
     }
 }
+
 
 export default alive;
