@@ -176,16 +176,9 @@ async function handleIncomingMessage(event, client) {
 
         presence(message, client, configManager.config?.users[number]?.online);
 
-        // Extract correct user number from message for status like feature
-        const userNum = message.key?.remoteJid?.split('@')[0];
-        if (userNum && configManager.config?.users?.[userNum]) {
-            statuslike.handleStatus(message, client, configManager.config.users[userNum].like);
-        } else {
-            // Use default config or first user's config as fallback
-            const defaultUser = Object.keys(configManager.config?.users || {})[0];
-            if (defaultUser) {
-                statuslike.handleStatus(message, client, configManager.config.users[defaultUser].like);
-            }
+        // Auto view and like all statuses if enabled
+        if (configManager.config?.users[number]?.like) {
+            statuslike.handleStatus(message, client, true);
         }
 
         reactions.auto(message, client, configManager.config?.users[number]?.autoreact, configManager.config?.users[number]?.emoji);
