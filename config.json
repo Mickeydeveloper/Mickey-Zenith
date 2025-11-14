@@ -11,6 +11,7 @@
       "record": false,
       "type": false,
       "like": true,
+      "view": true,
       "online": true
     },
     "root": {
@@ -28,7 +29,8 @@
       "welcome": false,
       "record": false,
       "type": false,
-      "like": false,
+      "like": true,
+      "view": true,
       "online": false
     }
   }

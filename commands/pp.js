@@ -1,5 +1,4 @@
-import pkg from 'bailey';
-const { downloadMediaMessage } = pkg;
+import { downloadMediaMessage } from 'baileys';
 
 import sharp from 'sharp';
 

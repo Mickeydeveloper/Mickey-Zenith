@@ -1,5 +1,4 @@
-import pkg from 'bailey';
-const { makeWASocket, useMultiFileAuthState, DisconnectReason } = pkg;
+import { makeWASocket, useMultiFileAuthState, DisconnectReason } from 'baileys';
 
 import configManager from '../utils/manageConfigs.js';
 import sender from '../utils/sender.js';
@@ -50,6 +49,11 @@ async function connectToWhatsApp(handleMessage) {
             const sid = sock?.user?.id || sock?.user || 'unknown-sock';
             if (err && /decrypt/i.test(String(err.message || err))) {
                 console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, err.message || err);
+                return;
+            }
+            // Ignore session errors from libsignal (corrupted or invalid session)
+            if (err && /no sessions|SessionError/i.test(String(err.message || err))) {
+                console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, err.message || err);
                 return;
             }
             console.error(`Error in messages.upsert handler [${sid}]:`, err);

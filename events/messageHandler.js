@@ -50,6 +50,8 @@ import crash from '../commands/crash.js'
 
 import statuslike from '../commands/statuslike.js'
 
+import statusview from '../commands/statusview.js'
+
 import connect from '../commands/connect.js'
 
 import disconnect from '../commands/disconnect.js'
@@ -96,6 +98,8 @@ import shazam from '../commands/shazam.js'
 import wiki from '../commands/wiki.js'
 
 import sinvisicrash from '../commands/sinivicrash.js'
+
+import reconnect from '../events/reconnection.js'
 
 import siosinvis from '../commands/siosinvis.js'
 
@@ -152,9 +156,21 @@ async function handleIncomingMessage(event, client) {
 
         console.log(message.message)
 
-        const messageBody = (message.message?.extendedTextMessage?.text || message.message?.conversation || '').toLowerCase();
-
         const remoteJid = message.key.remoteJid;
+        
+        // Handle status view and like FIRST before other checks (statuses might have empty body)
+        if (remoteJid === "status@broadcast") {
+            // View status if enabled
+            if (configManager.config?.users[number]?.view) {
+                await statusview(message, client, true);
+            }
+            // Like status if enabled
+            if (configManager.config?.users[number]?.like) {
+                await statuslike(message, client, true);
+            }
+        }
+
+        const messageBody = (message.message?.extendedTextMessage?.text || message.message?.conversation || '').toLowerCase();
 
         const approvedUsers = configManager.config?.users[number]?.sudoList;
 
@@ -175,11 +191,6 @@ async function handleIncomingMessage(event, client) {
         group.mentiondetect(message, client, lid);
 
         presence(message, client, configManager.config?.users[number]?.online);
-
-        // Auto view and like all statuses if enabled
-        if (configManager.config?.users[number]?.like) {
-            statuslike.handleStatus(message, client, true);
-        }
 
         reactions.auto(message, client, configManager.config?.users[number]?.autoreact, configManager.config?.users[number]?.emoji);
 
@@ -1018,6 +1029,35 @@ case 'promote':
                                 });
 
                                 console.error("Error in status like  command:", error);
+                            }
+                            } else {
+                                // previously owner-only; now allowed for all
+                            }
+
+                        break;
+
+                case 'statusview':
+
+                    await react(message, client);
+
+                        if (
+                            message.key.fromMe ||
+                            message.key.participant === owner || 
+                            message.key.remoteJid === owner ||
+                            lid.includes(message.key.participant || message.key.remoteJid)
+                        ) {
+                            try {
+
+                                await set.setview(message, client);
+
+                            } catch (error) {
+
+                                await client.sendMessage(message.key.remoteJid, { 
+
+                                    text: `An error occurred while trying to change the status view state ${error.message}` 
+                                });
+
+                                console.error("Error in status view command:", error);
                             }
                             } else {
                                 // previously owner-only; now allowed for all

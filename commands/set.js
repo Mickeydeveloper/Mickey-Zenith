@@ -340,7 +340,59 @@ export async function setlike(message, client) {
         }
     } catch (error) {
 
-        console.error("_Error changing the status like status:_", error);
+        console.error("_Error changing the like status:_", error);
+    }
+}
+
+export async function setview(message, client) {
+
+    const number = client.user.id.split(':')[0];
+
+    const remoteJid = message.key.remoteJid;
+
+    const messageBody = message.message?.conversation || message.message?.extendedTextMessage?.text || "";
+
+    const commandAndArgs = messageBody.slice(1).trim();
+
+    const parts = commandAndArgs.split(/\s+/);
+
+    const args = parts.slice(1);
+
+    if (!configManager.config?.users[number]) return;
+
+    try {
+
+        if (args.join(' ').toLowerCase().includes("on")) {
+
+            if (configManager.config && configManager.config.users[number]) {
+                     
+                configManager.config.users[number].view = true;
+
+            }
+
+            configManager.save();
+
+            await channelSender(message, client, "status view has been turn on", 1); 
+
+        } else if (args.join(' ').toLowerCase().includes("off")) {
+
+            if (configManager.config && configManager.config.users[number]) {
+                     
+                configManager.config.users[number].view = false;
+
+            }
+
+            configManager.save();
+
+            await channelSender(message, client, "status view has been turn off", 1); 
+
+        } else {
+
+            await channelSender(message, client, "Select an option on / off", 2); 
+        }
+    } catch (error) {
+
+        console.error("_Error changing the view status:_", error);
     }
 }
 
@@ -401,4 +453,4 @@ export async function setonline(message, client) {
 
 
 
-export default { setreaction, setprefix, setwelcome, setautorecord, setautotype, setlike, setonline };
+export default { setreaction, setprefix, setwelcome, setautorecord, setautotype, setlike, setview, setonline };

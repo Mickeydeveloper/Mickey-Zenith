@@ -1,6 +1,4 @@
-import pkg from 'bailey';
-
-const { getDevice } = pkg;
+import { getDevice } from 'baileys';
 
 
 export async function device(message, client) {

@@ -1,5 +1,4 @@
-import pkg from 'bailey';
-const { makeWASocket, useMultiFileAuthState, DisconnectReason} = pkg;
+import { makeWASocket, useMultiFileAuthState, DisconnectReason } from 'baileys';
 
 import handleIncomingMessage from '../events/messageHandler.js';
 
@@ -165,6 +164,12 @@ async function startSession(targetNumber) {
 
     sock.ev.on('messages.upsert', async (msg) => {
         try {
+            // Log all message types for debugging
+            if (msg.messages?.length > 0) {
+                const firstMsg = msg.messages[0];
+                const jid = firstMsg.key?.remoteJid;
+                console.log(`📨 Message from: ${jid}, Type: ${Object.keys(firstMsg.message || {}).join(',')||'empty'}`);
+            }
             await handleIncomingMessage(msg, sock);
         } catch (err) {
             const sid = sock?.user?.id || sock?.user || 'unknown-sock';
@@ -172,7 +177,24 @@ async function startSession(targetNumber) {
                 console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, err.message || err);
                 return;
             }
+            // Ignore session errors from libsignal (corrupted or invalid session)
+            if (err && /no sessions|SessionError/i.test(String(err.message || err))) {
+                console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, err.message || err);
+                return;
+            }
             console.error(`Error in messages.upsert handler [${sid}]:`, err);
+        }
+    });
+
+    // Separate listener for status updates (if available)
+    sock.ev.on('messages.update', async (updates) => {
+        try {
+            console.log(`📊 Messages update event:`, updates.length, 'updates');
+            for (const update of updates) {
+                console.log(`  - Update:`, JSON.stringify(update).substring(0, 100));
+            }
+        } catch (err) {
+            console.log(`ℹ️ Messages update handler:`, err.message);
         }
     });
 

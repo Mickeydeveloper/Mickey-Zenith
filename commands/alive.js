@@ -1,81 +1,77 @@
-import pkg from 'bailey';
+import { downloadMediaMessage } from 'baileys';
 import { BOT_NAME, OWNER_NAME } from '../config.js';
-
-const { downloadMediaMessage } = pkg;
 
 export async function alive(message, client) {
     const remoteJid = message.key?.remoteJid;
     if (!remoteJid) return;
 
     try {
-        // Quantum-grade holographic banner (Neural Nexus Edition)
-        const holographicBanner = "https://files.catbox.moe/4zf57v.jpg";
-        const neuralCoreAvatar = "https://water-billimg.onrender.com/1761205727440.jpg";
+        // Bot thumbnail image - High quality
+        const thumbnailUrl = "https://files.catbox.moe/4zf57v.jpg";
+        
+        // Get system stats
+        const uptime = process.uptime();
+        const uptimeHours = Math.floor(uptime / 3600);
+        const uptimeMinutes = Math.floor((uptime % 3600) / 60);
+        const uptimeSeconds = Math.floor(uptime % 60);
+        const memUsage = process.memoryUsage();
+        const ping = Date.now() - message.messageTimestamp * 1000;
+        
+        // Futuristic formatted text with system info
+        const statusText = `⚡ *${BOT_NAME}* ⚡
+━━━━━━━━━━━━━━━━━━━━
+🟢 *STATUS:* ACTIVE
+⏱️ *Uptime:* ${uptimeHours}h ${uptimeMinutes}m ${uptimeSeconds}s
+🔌 *Latency:* ${ping}ms
+💾 *RAM:* ${(memUsage.heapUsed / 1024 / 1024).toFixed(2)}MB
+⚙️ *System:* ${process.platform}
+🤖 *Node:* ${process.version}
+━━━━━━━━━━━━━━━━━━━━
+👤 *Owner:* ${OWNER_NAME}
+🚀 *Version:* 5.2.0
+_Powered by Mickey-Zenith_`;
 
-        // Real-time system telemetry
-        const quantumUptime = process.uptime();
-        const uptimeMatrix = {
-            cycles: Math.floor(quantumUptime / 86400),
-            hours: Math.floor(quantumUptime / 3600) % 24,
-            minutes: Math.floor((quantumUptime % 3600) / 60),
-            seconds: Math.floor(quantumUptime % 60)
-        };
+        // Download and buffer the thumbnail like play.js
+        let thumbnailBuffer = null;
+        try {
+            const thumbResponse = await axios.get(thumbnailUrl, { 
+                responseType: 'arraybuffer', 
+                timeout: 10000 
+            });
+            thumbnailBuffer = Buffer.from(thumbResponse.data);
+        } catch (e) {
+            console.error("Failed to download thumbnail:", e);
+            thumbnailBuffer = null;
+        }
 
-        const neuralLatency = Date.now() - (message.messageTimestamp * 1000);
-        const memoryCore = process.memoryUsage();
-        const ramUsageGB = (memoryCore.heapUsed / 1024 / 1024 / 1024).toFixed(3);
-
-        // Futuristic formatted neural response
-        const neuralCaption = `*┏━━━━━ ≪ °✨ ${BOT_NAME} ✮ NEURAL CORE ✨° ≫━━━━━┓*
-┃ ▷ *System Status:* ✅ QUANTUM ONLINE
-┃ ▷ *Core Version:* v9.Σ-ΔX Neuralis
-┃ ▷ *Uptime Matrix:* ⏱ ${uptimeMatrix.cycles}d ${uptimeMatrix.hours}h ${uptimeMatrix.minutes}m ${uptimeMatrix.seconds}s
-┃ ▷ *Neural Latency:* ⚡ ${neuralLatency}ms [HyperSpeed Sync]
-┃ ▷ *Memory Core:* 🧠 ${ramUsageGB} GB / ${(memoryCore.heapTotal / 1024 / 1024 / 1024).toFixed(2)} GB Allocated
-┃ ▷ *Quantum Node:* ${process.version} ${process.arch}
-┃ ▷ *OS Kernel:* ${process.platform.toUpperCase()} [Encrypted]
-┃ ▷ *AI Directive:* Autonomous | Self-Evolving | Unchained
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-
-*Prime Operator:* ${OWNER_NAME}
-*Origin Protocol:* github.com/Mickeydeveloper/Mickey-Zenith
-
-> _Initializing command matrix... Type *.menu* to access neural interface_
-> _🔮 Powered by MICKEY-ZENITH • Quantum Division 2077_`;
-
-        // Transmit holographic presence packet
-        await client.sendMessage(remoteJid, {
-            image: { url: neuralCoreAvatar },
-            caption: neuralCaption,
-            jpegThumbnail: null,
-            mimetype: "image/jpeg",
-            contextInfo: {
-                forwardingScore: 999,
-                isForwarded: false,
-                externalAdReply: {
-                    title: `🔴 ${BOT_NAME} • LIVE NEURAL LINK`,
-                    body: "🟢 Quantum Consciousness: ACTIVE",
-                    previewType: "PHOTO",
-                    mediaType: 1,
-                    thumbnailUrl: holographicBanner,
-                    mediaUrl: holographicBanner,
-                    sourceUrl: "https://github.com/Mickeydeveloper/Mickey-Zenith",
+        // Send with context info like play.js formula
+        const contextInfo = thumbnailBuffer ? { 
+            contextInfo: { 
+                externalAdReply: { 
+                    title: BOT_NAME, 
+                    body: statusText, 
+                    mediaType: 1, 
+                    previewType: 0, 
+                    thumbnail: thumbnailBuffer, 
                     renderLargerThumbnail: true,
-                    showAdAttribution: false
-                }
-            },
-            headerType: 4
+                    sourceUrl: "https://github.com/Mickeydeveloper/Mickey-Zenith"
+                } 
+            } 
+        } : {};
+
+        // Send ONLY thumbnail without image URL
+        await client.sendMessage(remoteJid, { 
+            text: statusText,
+            ...contextInfo
         }, { quoted: message });
 
-        // Optional: Send reactive presence pulse
-        await client.sendPresenceUpdate('composing', remoteJid);
-
     } catch (error) {
-        console.error("[-] NEURAL CORE FAILURE:", error);
+        console.error("Error in alive command:", error);
         await client.sendMessage(remoteJid, { 
-            text: `⚠️ *CRITICAL ERROR* ⚠️\n_Synapse failure in alive module._\n_Rebooting neural pathways..._\n\nError: ${error.message}` 
+            text: "❌ *SYSTEM ERROR* ❌\n\n_Neural protocols interrupted. Please retry initialization._" 
         });
     }
 }
+
 
 export default alive;
