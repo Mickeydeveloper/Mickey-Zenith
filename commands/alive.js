@@ -1,23 +1,22 @@
-import { downloadMediaMessage } from 'baileys';
-import { BOT_NAME, OWNER_NAME } from '../config.js';
+import axios from "axios";
+import { BOT_NAME, OWNER_NAME } from "../config.js";
 
 export async function alive(message, client) {
     const remoteJid = message.key?.remoteJid;
     if (!remoteJid) return;
 
     try {
-        // Bot thumbnail image - High quality
+        // Thumbnail (high resolution)
         const thumbnailUrl = "https://files.catbox.moe/4zf57v.jpg";
-        
-        // Get system stats
+
+        // System info
         const uptime = process.uptime();
         const uptimeHours = Math.floor(uptime / 3600);
         const uptimeMinutes = Math.floor((uptime % 3600) / 60);
         const uptimeSeconds = Math.floor(uptime % 60);
         const memUsage = process.memoryUsage();
-        const ping = Date.now() - message.messageTimestamp * 1000;
-        
-        // Futuristic formatted text with system info
+        const ping = Date.now() - (message.messageTimestamp * 1000);
+
         const statusText = `⚡ *${BOT_NAME}* ⚡
 ━━━━━━━━━━━━━━━━━━━━
 🟢 *STATUS:* ACTIVE
@@ -31,47 +30,47 @@ export async function alive(message, client) {
 🚀 *Version:* 5.2.0
 _Powered by Mickey-Zenith_`;
 
-        // Download and buffer the thumbnail like play.js
+        // Download thumbnail into buffer
         let thumbnailBuffer = null;
         try {
-            const thumbResponse = await axios.get(thumbnailUrl, { 
-                responseType: 'arraybuffer', 
-                timeout: 10000 
+            const response = await axios.get(thumbnailUrl, {
+                responseType: "arraybuffer",
+                timeout: 10000
             });
-            thumbnailBuffer = Buffer.from(thumbResponse.data);
-        } catch (e) {
-            console.error("Failed to download thumbnail:", e);
+            thumbnailBuffer = Buffer.from(response.data);
+        } catch (err) {
+            console.log("Thumbnail failed:", err);
             thumbnailBuffer = null;
         }
 
-        // Send with context info like play.js formula
-        const contextInfo = thumbnailBuffer ? { 
-            contextInfo: { 
-                externalAdReply: { 
-                    title: BOT_NAME, 
-                    body: statusText, 
-                    mediaType: 1, 
-                    previewType: 0, 
-                    thumbnail: thumbnailBuffer, 
-                    renderLargerThumbnail: true,
-                    sourceUrl: "https://github.com/Mickeydeveloper/Mickey-Zenith"
-                } 
-            } 
-        } : {};
+        // Meta-Ad style externalAdReply block
+        const contextInfo = {
+            externalAdReply: {
+                title: `${BOT_NAME} System Status`,
+                body: "Tap here for full dashboard",
+                mediaType: 1,
+                thumbnail: thumbnailBuffer,
+                renderLargerThumbnail: true,
+                showAdAttribution: true,        // Makes it look like Meta Ad
+                sourceUrl: "https://github.com/Mickeydeveloper/Mickey-Zenith"
+            }
+        };
 
-        // Send ONLY thumbnail without image URL
-        await client.sendMessage(remoteJid, { 
-            text: statusText,
-            ...contextInfo
-        }, { quoted: message });
+        await client.sendMessage(
+            remoteJid,
+            {
+                text: statusText,
+                contextInfo
+            },
+            { quoted: message }
+        );
 
     } catch (error) {
-        console.error("Error in alive command:", error);
-        await client.sendMessage(remoteJid, { 
-            text: "❌ *SYSTEM ERROR* ❌\n\n_Neural protocols interrupted. Please retry initialization._" 
+        console.error("ALIVE ERROR:", error);
+        await client.sendMessage(remoteJid, {
+            text: "❌ *SYSTEM FAILURE* — Alive module crashed."
         });
     }
 }
-
 
 export default alive;
