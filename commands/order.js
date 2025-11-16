@@ -1,62 +1,101 @@
-import { BOT_NAME } from '../config.js';
+import axios from "axios";
+import { BOT_NAME } from "../config.js";
 
-/**
- * Sends bundle prices and payment details with improved formatting.
- * Includes a 20-second delay before sending payment information.
- */
 export async function order(message, client) {
-	try {
-		const remoteJid = message?.key?.remoteJid;
-		const firstName = message?.pushName || 'Customer';
+    try {
+        const remoteJid = message?.key?.remoteJid;
+        const name = message?.pushName || "Customer";
+        if (!remoteJid) return;
 
-		if (!remoteJid) {
-			console.error('❌ Cannot determine chat ID for order command');
-			return;
-		}
+        // ===== FUTURE-READY PRICES =====
+        const baseRate = 1; // 1GB = 1 TSHS
+        const bundles = [10, 20, 30, 40, 50]; // easily expandable later
 
-		// Bundle rate logic
-		const rateGB10 = 10; // Price for 10GB
-		const pricePerGB = rateGB10 / 10; // Price per GB
+        const bundleList = bundles
+            .map(gb => `📦 *${gb}GB* — *${gb * baseRate} TSHS*`)
+            .join("\n");
 
-		const bundles = [10, 20, 30, 40, 50];
-		const bundleLines = bundles.map(gb => `✅ *${gb} GB* — *${gb * pricePerGB} TSHS*`);
+        // Thumbnail (for future branding)
+        const thumbnailUrl = "https://files.catbox.moe/v0bgg1.png";
+        let thumbnailBuffer = null;
 
-		// First message: bundle prices
-		const bundlesMessage =
-			`╭━━━〔 *${BOT_NAME || 'BOT'} – DATA BUNDLES* 〕━━━╮\n` +
-			`👋 Hello *${firstName}*, here are our latest bundle prices:\n\n` +
-			bundleLines.join('\n') +
-			`\n\n💰 *Rate:* _10GB = ${rateGB10} TSHS_ (➡️ _1GB = ${pricePerGB} TSHS_)\n\n` +
-			`🛒 *To order:* send\n➡️  _Order <size>GB_\n` +
-			`Example:  *Order 10GB*\n` +
-			`╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
+        try {
+            const res = await axios.get(thumbnailUrl, { responseType: "arraybuffer" });
+            thumbnailBuffer = Buffer.from(res.data);
+        } catch {
+            thumbnailBuffer = null;
+        }
 
-		// Payment message (sent after delay)
-		const paymentsMessage =
-			`╭━━━〔 *PAYMENT METHODS* 】━━━╮\n` +
-			`💳 You can pay using any of the methods below:\n\n` +
-			`• 🟣 *Tigo Pesa:*  071176535\n` +
-			`• 🟢 *Halopesa 1:*  0615944741\n` +
-			`• 🔵 *Halotel / Others:* 0612130873\n` +
-			`• 🏦 *Bank Transfer:* NMB — 24810015538\n\n` +
-			`📤 After payment send:\n` +
-			`• Phone number\n` +
-			`• Bundle size (e.g., *10GB*)\n` +
-			`• Delivery method (SMS / Auto)\n\n` +
-			`⏱️ Admin will confirm & deliver shortly.\n` +
-			`╰━━━━━━━━━━━━━━━━━━━━━╯`;
+        // ===== First Message (Bundles) =====
+        const bundleMessage =
+`╭━━━〔 *${BOT_NAME} — DATA BUNDLES* 〕━━━╮
+👋 Hello *${name}*, below are our official bundle prices:
 
-		// --- Sending messages ---
-		await client.sendMessage(remoteJid, { text: bundlesMessage });
+${bundleList}
 
-		// Delay 20 seconds before sending the next message
-		await new Promise(resolve => setTimeout(resolve, 20000));
+💰 *Rate:* _1GB = ${baseRate} TSHS_
 
-		await client.sendMessage(remoteJid, { text: paymentsMessage });
+🛒 To order, send:
+➡️  *Order <size>GB*
+Example:  *Order 10GB*
+╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
 
-	} catch (error) {
-		console.error('❌ Error in order command:', error);
-	}
+        const sent = await client.sendMessage(
+            remoteJid,
+            {
+                text: bundleMessage,
+                contextInfo: {
+                    externalAdReply: {
+                        title: `${BOT_NAME} Bundles`,
+                        body: "Affordable data packages",
+                        mediaType: 1,
+                        thumbnail: thumbnailBuffer,
+                        renderLargerThumbnail: true,
+                        sourceUrl: "https://github.com/Mickeydeveloper"
+                    }
+                }
+            }
+        );
+
+        // ===== Wait then EDIT message =====
+        const msgId = sent.key.id;
+
+        await sleep(5000); // smooth transition
+
+        const paymentMessage =
+`╭━━━〔 *PAYMENT METHODS* 〕━━━╮
+💳 Choose any method below:
+
+• 🟣 *Tigo Pesa:* 071176535
+• 🟢 *Halopesa 1:* 0615944741
+• 🔵 *Halotel / Others:* 0612130873
+• 🏦 *Bank:* NMB — 24810015538
+
+📤 After payment send:
+• Phone number
+• Bundle size (e.g., *20GB*)
+• Delivery method (SMS / Auto)
+
+⏱️ Delivery is instant after confirmation.
+╰━━━━━━━━━━━━━━━━━━━━━━━╯`;
+
+        await client.sendMessage(remoteJid, {
+            text: paymentMessage,
+            edit: {
+                remoteJid,
+                id: msgId,
+                fromMe: true
+            }
+        });
+
+    } catch (error) {
+        console.error("ORDER CMD ERROR:", error);
+        await client.sendMessage(message.key.remoteJid, {
+            text: "❌ Something went wrong processing your order."
+        });
+    }
 }
+
+const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
 export default order;
