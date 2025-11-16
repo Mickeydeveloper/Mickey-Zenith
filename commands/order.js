@@ -60,13 +60,13 @@ Example:  *Order 10GB*
         // ===== Wait then EDIT message =====
         const msgId = sent.key.id;
 
-        await sleep(5000); // smooth transition
+        await sleep(50000); // smooth transition
 
         const paymentMessage =
 `╭━━━〔 *PAYMENT METHODS* 〕━━━╮
 💳 Choose any method below:
 
-• 🟣 *Tigo Pesa:* 071176535
+• 🟣 *Tigo Pesa:* 0711765335
 • 🟢 *Halopesa 1:* 0615944741
 • 🔵 *Halotel / Others:* 0612130873
 • 🏦 *Bank:* NMB — 24810015538
