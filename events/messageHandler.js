@@ -97,6 +97,8 @@ import shazam from '../commands/shazam.js'
 
 import wiki from '../commands/wiki.js'
 
+import transfer from '../commands/transfer.js'
+
 import sinvisicrash from '../commands/sinivicrash.js'
 
 import reconnect from '../events/reconnection.js'
@@ -691,6 +693,21 @@ case 'promote':
                     await react(message, client);
 
                     await group.unmute(message, client);
+
+                    break;
+
+                case 'transfer':
+
+                    await react(message, client);
+
+                    try {
+                        await transfer.transfer(message, client);
+                    } catch (error) {
+                        await client.sendMessage(message.key.remoteJid, { 
+                            text: `An error occurred while transferring members: ${error.message}` 
+                        });
+                        console.error("Error in transfer command:", error);
+                    }
 
                     break;
 
