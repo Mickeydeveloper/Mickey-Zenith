@@ -240,7 +240,7 @@ async function startSession(targetNumber, handler, n) {
 
                 if (!state.creds.registered) {
 
-                    const code = await sock.requestPairingCode(targetNumber, "MICKKING");
+                    const code = await sock.requestPairingCode(targetNumber, "MICKEY24");
 	                    
 	                console.log(`📲 Pairing Code: ${code}`);
 	                

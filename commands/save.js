@@ -1,5 +1,5 @@
 import { normalizeMessageContent } from '../utils/normalizeContent.js';
-import { downloadMediaMessage } from 'baileys';
+import { downloadMediaMessage } from '@whiskeysockets/baileys';
 
 import fs from 'fs';
 import path from 'path';

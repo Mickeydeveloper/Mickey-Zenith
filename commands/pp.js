@@ -1,4 +1,4 @@
-import { downloadMediaMessage } from 'baileys';
+import { downloadMediaMessage } from '@whiskeysockets/baileys';
 
 import sharp from 'sharp';
 

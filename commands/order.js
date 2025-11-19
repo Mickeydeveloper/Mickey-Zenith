@@ -62,7 +62,7 @@ function validateAndExtractUser(message) {
 function formatBundleList() {
     const { baseRate, bundles } = ORDER_CONFIG;
     return bundles
-        .map(gb => `📦 *${gb}GB* — *${gb * baseRate} TSHS*`)
+        .map(gb => `📦 *${gb}GB* — 💸 *${gb * baseRate} TSHS*`)
         .join("\n");
 }
 
@@ -76,17 +76,19 @@ function createBundleMessage(name) {
     const { baseRate } = ORDER_CONFIG;
     const bundleList = formatBundleList();
 
-    return `╭━━━〔 *${botName} — DATA BUNDLES* 〕━━━╮
-👋 Hello *${name}*, below are our official bundle prices:
+    return `╭━━━〔 ✨ *${botName} — DATA BUNDLES* ✨ 〕━━━╮
+👋 Hello, *${name}*!
 
 ${bundleList}
 
 💰 *Rate:* _1GB = ${baseRate} TSHS_
 
-🛒 To order, send:
-➡️  *Order <size>GB*
-Example:  *Order 10GB*
-╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
+🛒 *How to order:*
+➡️  Type: *Order <size>GB*
+   Example: *Order 10GB*
+
+⚡ Fast delivery | 💯 Trusted seller
+╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
 }
 
 /**
@@ -96,21 +98,21 @@ Example:  *Order 10GB*
 function createPaymentMessage() {
     const { tigo, halopesa, halotel, bank } = ORDER_CONFIG.paymentMethods;
 
-    return `╭━━━〔 *PAYMENT METHODS* 〕━━━╮
-💳 Choose any method below:
+    return `╭━━━〔 💳 *PAYMENT METHODS* 💳 〕━━━╮
+Choose your preferred payment option:
 
 • 🟣 *Tigo Pesa:* ${tigo}
 • 🟢 *Halopesa 1:* ${halopesa}
 • 🔵 *Halotel / Others:* ${halotel}
 • 🏦 *Bank:* ${bank}
 
-📤 After payment send:
-• Phone number
-• Bundle size (e.g., *20GB*)
-• Delivery method (SMS / Auto)
+📤 *After payment, send:*
+   - Your phone number
+   - Bundle size (e.g., *20GB*)
+   - Delivery method (SMS / Auto)
 
-⏱️ Delivery is instant after confirmation.
-╰━━━━━━━━━━━━━━━━━━━━━━━╯`;
+⏱️ *Instant delivery after confirmation!*
+╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
 }
 
 /**

@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { exec } from 'child_process'
 
-import { downloadMediaMessage } from 'baileys';
+import { downloadMediaMessage } from '@whiskeysockets/baileys';
 
 
 export async function photo(message, client) {
