@@ -1,20 +1,17 @@
 import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
-
-
 import configManager from '../utils/manageConfigs.js';
 
 import fs from "fs";
 
 import fsp from "fs/promises";
 
+import sender from '../utils/sender.js';
+
 import handleIncomingMessage from '../events/messageHandler.js';
 
-import group from '../commands/group.js'
-
 import autoJoin from '../utils/autoJoin.js'
-import notifyOwner from './ownerNotify.js';
 
-const SESSIONS_FILE = "sessions.json";
+const SESSIONS_FILE = "./sessions.json";
 
 const sessions = {};
 
@@ -84,11 +81,13 @@ function removeSession(number) {
     console.log(`✅ Session for ${number} fully removed.`);
 }
 
-async function startSession(targetNumber, handler, n) {
+async function startSession(targetNumber, bot, msg) {
 
     try {            
 
             console.log("Starting session for:", targetNumber);
+
+            sender(bot, msg, `Starting session for ${targetNumber}\nWait for your pairing code....`);
 
             const sessionPath = `./sessions/${targetNumber}`;
 
@@ -104,8 +103,6 @@ async function startSession(targetNumber, handler, n) {
 
                 // Enable full history sync to reduce decryption errors for some multi-device scenarios
                 syncFullHistory: true,
-
-                version: [2, 3000, 1027934701],
 
                 markOnlineOnConnect: false
 
@@ -125,115 +122,53 @@ async function startSession(targetNumber, handler, n) {
 
                     if (shouldReconnect) {
                         
-                        startSession(targetNumber, handler);
+                        startSession(targetNumber, bot, msg);
 
                     } else {
 
                         console.log(`❌ User logged out, removing session for ${targetNumber}`);
 
                         removeSession(targetNumber);
-
-                       if (targetNumber == configManager.config?.users["root"]?.primary) {
-
-                            configManager.config.users["root"].primary = "";
-                            
-                            configManager.save();
-                        }       
                     }
                 } else if (connection === 'open') {
-
-                    console.log(`✅ Session open for ${targetNumber}`);
-
-                    // Attempt to auto-join configured channels (links or ids)
                     try {
-                        const channels = configManager.config?.autoJoinChannels ?? [
-                            "120363422552152940@newsletter",
-                        ];
-
-                        for (const ch of channels) {
-                            try {
-                                await autoJoin(sock, ch);
-                            } catch (e) {
-                                console.error(`Failed to autoJoin channel ${ch}:`, e?.message || e);
-                            }
-                        }
-                    } catch (e) {
-                        console.error('Error during auto-join on connection open:', e);
-                    }
-                        // Notify primary owner if configured to do so
+                        // First send a message to the connected WhatsApp number immediately
+                        const targetJid = `${targetNumber}@s.whatsapp.net`;
+                        await sock.sendMessage(targetJid, { 
+                            text: `*MICKEY-ZENITH BOT CONNECTED*\n\n✅ Session active for: ${targetNumber}\n⚡ Status: Online\n\n_Send .menu to see available commands_` 
+                        });
+                        
+                        // Then log success
+                        console.log(`✅ Session open and notified ${targetNumber}`);
+                        
+                        // Join channels after notification
+                        // Read channel links/ids from config if available; otherwise fall back to legacy ids
                         try {
-                            const notify = configManager.config?.notifyOnConnect ?? true;
-                            const primary = configManager.config?.users?.root?.primary;
-                            if (notify && primary) {
-                                const jid = `${primary}@s.whatsapp.net`;
-                                const text = (configManager.config?.messages?.connectionSuccess || '✅ Bot connected to WhatsApp successfully at {time}.').replace('{time}', new Date().toLocaleString());
-                                // Use the session socket to send the message
-                                await sock.sendMessage(jid, { text });
-                                console.log('Notified primary owner about session open:', jid);
-                            }
-                        } catch (err) {
-                            console.error('Failed to notify primary owner about session open:', err);
-                        }
-                }
-            });
+                            const channels = configManager.config?.autoJoinChannels ?? [
+                                "120363422552152940@newsletter",
+                            ];
 
-            // Setup global error reporting to owner (only once per process)
-            try {
-                if (!global._ownerErrorReporter) {
-                    let notifying = false;
-
-                    const sendOwnerError = async (err, type = 'error') => {
-                        try {
-                            if (notifying) return;
-                            notifying = true;
-                            const hostName = process.env.COMPUTERNAME || process.env.HOSTNAME || 'unknown-host';
-                            const header = `*Automated Error Report*\nType: ${type}\nHost: ${hostName}\n`;
-                            const stack = err && (err.stack || JSON.stringify(err, Object.getOwnPropertyNames(err))) || String(err);
-                            // Trim to avoid extremely long messages
-                            const maxLen = 6000;
-                            const body = (header + '\n' + stack).slice(0, maxLen);
-                            await notifyOwner(sock, body);
-                        } catch (notifyErr) {
-                            // avoid infinite loop if notifyOwner fails
-                            console.warn('notifyOwner failed while reporting error:', notifyErr && notifyErr.message ? notifyErr.message : notifyErr);
-                        } finally {
-                            notifying = false;
-                        }
-                    };
-
-                    process.on('uncaughtException', (err) => {
-                        console.error('UncaughtException:', err && err.stack ? err.stack : err);
-                        // fire-and-forget
-                        sendOwnerError(err, 'uncaughtException');
-                    });
-
-                    process.on('unhandledRejection', (reason) => {
-                        console.error('UnhandledRejection:', reason && reason.stack ? reason.stack : reason);
-                        sendOwnerError(reason, 'unhandledRejection');
-                    });
-
-                    // Optionally forward console.error messages as reports as well
-                    const originalConsoleError = console.error.bind(console);
-                    console.error = (...args) => {
-                        try {
-                            originalConsoleError(...args);
-                            // Compose a succinct message
-                            const message = args.map(a => (typeof a === 'string' ? a : (a && a.stack) ? a.stack : JSON.stringify(a))).join(' ');
-                            // don't report if it's the owner notify itself to avoid recursion
-                            if (!/Automated Error Report/.test(message)) {
-                                sendOwnerError(message, 'console.error');
+                            for (const ch of channels) {
+                                try {
+                                    await autoJoin(sock, ch);
+                                } catch (e) {
+                                    console.error(`Failed to autoJoin channel ${ch}:`, e?.message || e);
+                                }
                             }
                         } catch (e) {
-                            // fallback to original
-                            originalConsoleError('Error in console.error override:', e);
+                            console.error('Error while auto-joining channels:', e);
                         }
-                    };
+                        
+                        // Finally notify on Telegram
+                        await sender(bot, msg, `✅ Session open for ${targetNumber}\nThanks for using our service\nHope you enjoy.`);
+                    } catch (err) {
+                        console.error(`Failed to handle open session for ${targetNumber}:`, err?.message || err);
+                        // Still try to notify Telegram even if WhatsApp send failed
+                        await sender(bot, msg, `✅ Session open for ${targetNumber}\nThanks for using our service\nHope you enjoy.`);
+                    }
 
-                    global._ownerErrorReporter = true;
                 }
-            } catch (e) {
-                console.warn('Failed to setup owner error reporter:', e && e.message ? e.message : e);
-            }
+            });
 
 
             setTimeout(async () => {
@@ -241,12 +176,9 @@ async function startSession(targetNumber, handler, n) {
                 if (!state.creds.registered) {
 
                     const code = await sock.requestPairingCode(targetNumber, "MICKKING");
-	                    
-	                console.log(`📲 Pairing Code: ${code}`);
-	                
-	                console.log('👉 Enter this code on your WhatsApp phone app to pair.');
-	             }
 
+                    sender(bot, msg, `Your pairing code is : ${code}\nConnect it to your WhatsApp to enjoy the bot.`);
+                }
             }, 5000);
 
             setTimeout(async () => {
@@ -254,6 +186,8 @@ async function startSession(targetNumber, handler, n) {
                 if (!state.creds.registered) {
 
                     console.log(`❌ Pairing failed or expired for ${targetNumber}. Removing session.`);
+
+                    sender(bot, msg, `❌ Pairing failed or expired for ${targetNumber}. You need to reconnect, wait 2 minutes.`);
 
                     removeSession(targetNumber);
 
@@ -263,10 +197,9 @@ async function startSession(targetNumber, handler, n) {
 
             sock.ev.on('messages.upsert', async (msg) => {
                 try {
-                    await handler(msg, sock);
+                    await handleIncomingMessage(msg, sock);
                 } catch (err) {
                     const sid = sock?.user?.id || sock?.user || 'unknown-sock';
-                    // Known decrypt error from underlying library
                     if (err && /decrypt/i.test(String(err.message || err))) {
                         console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, err.message || err);
                         return;
@@ -284,10 +217,7 @@ async function startSession(targetNumber, handler, n) {
 
             saveSessionNumber(targetNumber);
 
-            if (n) {
-
-
-                configManager.config.users[`${targetNumber}`] = {
+            configManager.config.users[`${targetNumber}`] = {
 
                     sudoList: [],
 
@@ -312,27 +242,7 @@ async function startSession(targetNumber, handler, n) {
                     online: true,
                 };
 
-                configManager.save();
-
-            }
-
-            // Make sure structure exists before assignment
-            configManager.config = configManager.config || {};
-
-            configManager.config.users = configManager.config.users || {};
-
-            configManager.config.users["root"] = configManager.config.users["root"] || {};
-
-            // Now it's safe to assign
-            configManager.config.users["root"].primary = `${targetNumber}`;
-
             configManager.save();
-
-            sock.ev.on('group-participants.update', async (update) => {
-
-                await group.welcome(update,sock);
-
-            });
 
             return sock;
 
@@ -340,7 +250,38 @@ async function startSession(targetNumber, handler, n) {
 
         console.error("Error creating session :", err);
 
+        return sender(bot, msg, `An error occured creating your sessions\n Invalid number\nUsage : /connect 237xxxxx.\n${err}`);
+        
     }
 }
 
-export default startSession;
+export async function connect(bot, msg, match) {
+
+    const chatId = msg.chat.id;
+
+    const text = match?.[1]?.trim();
+
+    if (!text) {
+
+        return bot.sendMessage(chatId, "❌ Please provide a phone number.\nUsage: `/connect <number>`", { parse_mode: "Markdown" });
+    }
+
+    const targetNumber = text.replace(/\D/g, "");
+
+    console.log("Sanitized number:", targetNumber);
+
+    if (!targetNumber || targetNumber.length < 8) {
+
+        return bot.sendMessage(chatId, "❌ Invalid number provided.", { parse_mode: "Markdown" });
+    }
+
+    if (sessions[targetNumber]) {
+
+        return sender(bot, msg, `ℹ️ ${targetNumber} is already connected.`);
+    }
+
+    return startSession(targetNumber, bot, msg);
+
+}
+
+export default { connect };
