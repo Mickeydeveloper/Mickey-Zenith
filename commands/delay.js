@@ -1,6 +1,6 @@
 import crypto from "crypto";
 
-import pkg from 'baileys';
+import pkg from "@whiskeysockets/baileys";
 
 const { generateWAMessageFromContent } = pkg;
 

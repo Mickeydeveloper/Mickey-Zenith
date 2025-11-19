@@ -1,4 +1,4 @@
-import { getDevice } from 'baileys';
+import { getDevice } from "@whiskeysockets/baileys";
 
 
 export async function device(message, client) {

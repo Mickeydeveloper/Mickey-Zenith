@@ -1,6 +1,6 @@
 import channelSender from '../commands/channelSender.js'
 
-import pkg from "baileys";
+import pkg from "@whiskeysockets/baileys";
 const { proto } = pkg;
 
 // Function to send beta1 message

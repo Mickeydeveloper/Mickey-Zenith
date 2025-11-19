@@ -1,4 +1,4 @@
-import { isJidGroup, getContentType } from 'baileys';
+import { isJidGroup, getContentType } from "@whiskeysockets/baileys";
 
 import configManager from '../utils/manageConfigs.js';
 

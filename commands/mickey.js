@@ -16,6 +16,7 @@ const MICKEY_CONFIG = {
 function extractQuery(message) {
     try {
         const body =
+            message.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation || // Check if the message is a reply
             message.message?.extendedTextMessage?.text ||
             message.message?.conversation ||
             '';
