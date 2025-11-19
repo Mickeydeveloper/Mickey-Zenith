@@ -1,6 +1,6 @@
 import fs, { createWriteStream } from 'fs';
 import path from 'path';
-import pkg from 'baileys';
+import pkg from '@whiskeysockets/baileys';
 import ffmpeg from 'fluent-ffmpeg';
 import configManager from '../utils/manageConfigs.js';
 
