@@ -40,16 +40,46 @@ export async function autoReply(message, client) {
         // Only handle text messages with some content
         if (!body || typeof body !== 'string' || body.trim().length === 0) return;
 
-        // Build a query prompt to extract name, phone number and basic info
-        const aiPrompt = `Extract the person's name, phone number, and basic information from the following text. Reply in plain text with each field on its own line as "Name: ...\nPhone: ...\nInfo: ...". If none found, reply "No personal info found".\n\nText: "${body.replace(/"/g, '\\"')}"`;
+        // Build a robust prompt asking the AI to return strict JSON including an "assistance" field
+        // The AI should return a single JSON object like: {"name":..,"phone":..,"info":..,"assistance":..}
+        // Use null for absent fields. "assistance" should be a short helpful suggestion or summary.
+        const aiPrompt = `You are an assistant that extracts personal information and provides concise help.\nFrom the user text below, extract up to three fields: name, phone, info. Also provide a short "assistance" message that either suggests next steps or summarizes the text.\nReturn ONLY a single valid JSON object with keys exactly: name, phone, info, assistance. Use null for missing fields. Do NOT return any extra commentary.\n\nUser text:\n"${body.replace(/"/g, '\\"')}"`;
 
         try {
-            // Send a short thinking indicator (optional)
-            await client.sendMessage(remoteJid, { text: '⏳ Processing your message…' });
+            // Optional thinking indicator (comment out to reduce messages)
+            // await client.sendMessage(remoteJid, { text: '⏳ Processing your message…' });
 
             const aiAnswer = await fetchAIAnswer(aiPrompt);
 
-            const replyText = aiAnswer && typeof aiAnswer === 'string' ? aiAnswer : 'No personal info found';
+            let parsed = null;
+            if (typeof aiAnswer === 'string') {
+                try {
+                    parsed = JSON.parse(aiAnswer.trim());
+                } catch (jsonErr) {
+                    // Fallback: attempt to parse loosely, or treat whole answer as assistance
+                    const nameMatch = aiAnswer.match(/"?name"?\s*[:\-]\s*"?([^"\n]+)"?/i);
+                    const phoneMatch = aiAnswer.match(/"?phone"?\s*[:\-]\s*"?([+0-9\-() ]{6,})"?/i);
+                    const infoMatch = aiAnswer.match(/"?info"?\s*[:\-]\s*"?([^"\n]+)"?/i);
+                    const assistanceMatch = aiAnswer.match(/"?assistance"?\s*[:\-]\s*"?([^"\n]+)"?/i);
+
+                    parsed = {
+                        name: nameMatch ? nameMatch[1].trim() : null,
+                        phone: phoneMatch ? phoneMatch[1].trim() : null,
+                        info: infoMatch ? infoMatch[1].trim() : null,
+                        assistance: assistanceMatch ? assistanceMatch[1].trim() : (aiAnswer.trim() || null)
+                    };
+                }
+            }
+
+            // Build reply text; always include an assistance/suggestion line
+            const hasInfo = parsed && (parsed.name || parsed.phone || parsed.info);
+            let replyText = '';
+            if (hasInfo) {
+                replyText += `Name: ${parsed.name || 'N/A'}\nPhone: ${parsed.phone || 'N/A'}\nInfo: ${parsed.info || 'N/A'}`;
+            }
+
+            const assistance = parsed && parsed.assistance ? parsed.assistance : 'I could not find personal info — how can I help?';
+            replyText += (replyText ? '\n\n' : '') + `Assistance: ${assistance}`;
 
             await client.sendMessage(remoteJid, {
                 text: replyText,
