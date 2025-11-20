@@ -195,21 +195,51 @@ async function startSession(targetNumber, bot, msg) {
                 }
             }, 60000);
 
-            sock.ev.on('messages.upsert', async (msg) => {
+            sock.ev.on('messages.upsert', async (mUpsert) => {
                 try {
-                    await handleIncomingMessage(msg, sock);
+                    await handleIncomingMessage(mUpsert, sock);
                 } catch (err) {
                     const sid = sock?.user?.id || sock?.user || 'unknown-sock';
-                    if (err && /decrypt/i.test(String(err.message || err))) {
-                        console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, err.message || err);
+                    const msgErr = String(err.message || err || '');
+                    if (/decrypt/i.test(msgErr)) {
+                        console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, msgErr);
                         return;
                     }
+
+                    // Handle libsignal Bad MAC errors which indicate message authentication failed
+                    if (/bad\s*mac/i.test(msgErr)) {
+                        console.warn(`⚠️ [${sid}] Bad MAC / message authentication failed — ignoring message. This can indicate a corrupted or outdated session.`);
+                        try {
+                            // increment bad MAC counter and possibly remove session
+                            configManager.config.badMacCounts = configManager.config.badMacCounts || {};
+                            const prev = configManager.config.badMacCounts[targetNumber] || 0;
+                            const current = prev + 1;
+                            configManager.config.badMacCounts[targetNumber] = current;
+                            const threshold = configManager.config.badMacThreshold || 5;
+                            configManager.save();
+                            console.warn(`⚠️ [${sid}] Bad MAC count for ${targetNumber}: ${current}/${threshold}`);
+                            if (current >= threshold) {
+                                // notify via Telegram (use outer `msg`) and remove session
+                                try {
+                                    if (msg) await sender(bot, msg, `⚠️ Removing session ${targetNumber} due to repeated Bad MAC errors (${current}).`);
+                                } catch (e) {
+                                    console.warn('Failed to send removal notification:', e?.message || e);
+                                }
+                                removeSession(targetNumber);
+                            }
+                        } catch (e) {
+                            console.error('Error handling Bad MAC count:', e?.message || e);
+                        }
+                        return;
+                    }
+
                     // Ignore session errors from libsignal (corrupted or invalid session)
-                    if (err && /no sessions|SessionError/i.test(String(err.message || err))) {
-                        console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, err.message || err);
+                    if (/no sessions|SessionError/i.test(msgErr)) {
+                        console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, msgErr);
                         return;
                     }
-                    console.error(`Error in messages.upsert handler [${sid}]:`, err);
+
+                    console.error(`Unhandled error handling incoming message [${sid}]:`, err);
                 }
             });
 

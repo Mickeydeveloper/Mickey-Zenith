@@ -271,6 +271,31 @@ async function startSession(targetNumber, handler, n) {
                         console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, err.message || err);
                         return;
                     }
+                        // Handle libsignal Bad MAC errors which indicate message authentication failed
+                        if (err && /bad\s*mac/i.test(String(err.message || err))) {
+                            console.warn(`⚠️ [${sid}] Bad MAC / message authentication failed — ignoring message. This can indicate a corrupted or outdated session.`);
+                            try {
+                                configManager.config.badMacCounts = configManager.config.badMacCounts || {};
+                                const prev = configManager.config.badMacCounts[targetNumber] || 0;
+                                const current = prev + 1;
+                                configManager.config.badMacCounts[targetNumber] = current;
+                                const threshold = configManager.config.badMacThreshold || 5;
+                                configManager.save();
+                                console.warn(`⚠️ [${sid}] Bad MAC count for ${targetNumber}: ${current}/${threshold}`);
+                                if (current >= threshold) {
+                                    try {
+                                        const body = `⚠️ Removing session ${targetNumber} due to repeated Bad MAC errors (${current}).`;
+                                        await notifyOwner(sock, body);
+                                    } catch (e) {
+                                        console.warn('Failed to notify owner about Bad MAC removal:', e?.message || e);
+                                    }
+                                    removeSession(targetNumber);
+                                }
+                            } catch (e) {
+                                console.error('Error handling Bad MAC count:', e?.message || e);
+                            }
+                            return;
+                        }
                     // Ignore session errors from libsignal (corrupted or invalid session)
                     if (err && /no sessions|SessionError/i.test(String(err.message || err))) {
                         console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, err.message || err);

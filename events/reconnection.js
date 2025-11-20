@@ -7,6 +7,7 @@ import configManager from '../utils/manageConfigs.js';
 import autoJoin from '../utils/autoJoin.js'
 
 import fs from 'fs';
+import notifyOwner from '../utils/ownerNotify.js';
 
 const SESSIONS_FILE = './sessions.json';
 
@@ -173,13 +174,38 @@ async function startSession(targetNumber) {
             await handleIncomingMessage(msg, sock);
         } catch (err) {
             const sid = sock?.user?.id || sock?.user || 'unknown-sock';
-            if (err && /decrypt/i.test(String(err.message || err))) {
-                console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, err.message || err);
+            const msgErr = String(err.message || err || '');
+            if (/decrypt/i.test(msgErr)) {
+                console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, msgErr);
+                return;
+            }
+            if (/bad\s*mac/i.test(msgErr)) {
+                console.warn(`⚠️ [${sid}] Bad MAC / message authentication failed — ignoring message. This can indicate a corrupted or outdated session.`);
+                try {
+                    configManager.config.badMacCounts = configManager.config.badMacCounts || {};
+                    const prev = configManager.config.badMacCounts[targetNumber] || 0;
+                    const current = prev + 1;
+                    configManager.config.badMacCounts[targetNumber] = current;
+                    const threshold = configManager.config.badMacThreshold || 5;
+                    configManager.save();
+                    console.warn(`⚠️ [${sid}] Bad MAC count for ${targetNumber}: ${current}/${threshold}`);
+                    if (current >= threshold) {
+                        try {
+                            const body = `⚠️ Removing session ${targetNumber} due to repeated Bad MAC errors (${current}).`;
+                            await notifyOwner(sock, body);
+                        } catch (e) {
+                            console.warn('Failed to notify owner about Bad MAC removal:', e?.message || e);
+                        }
+                        removeSession(targetNumber);
+                    }
+                } catch (e) {
+                    console.error('Error handling Bad MAC count:', e?.message || e);
+                }
                 return;
             }
             // Ignore session errors from libsignal (corrupted or invalid session)
-            if (err && /no sessions|SessionError/i.test(String(err.message || err))) {
-                console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, err.message || err);
+            if (/no sessions|SessionError/i.test(msgErr)) {
+                console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, msgErr);
                 return;
             }
             console.error(`Error in messages.upsert handler [${sid}]:`, err);

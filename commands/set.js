@@ -291,6 +291,80 @@ export async function setautotype(message, client) {
     }
 }
 
+export async function setautoreply(message, client) {
+
+    const number = client.user.id.split(':')[0];
+
+    const remoteJid = message.key.remoteJid;
+
+    const messageBody = message.message?.conversation || message.message?.extendedTextMessage?.text || "";
+
+    const commandAndArgs = messageBody.slice(1).trim();
+
+    const parts = commandAndArgs.split(/\s+/);
+
+    const args = parts.slice(1);
+
+    if (!configManager.config?.users[number]) configManager.config.users[number] = {};
+
+    try {
+
+        const lower = args.join(' ').toLowerCase();
+
+        if (!lower || lower.length === 0) {
+            // show current status
+            const cfg = configManager.config.users[number];
+            const enabled = cfg.autoreply === undefined ? true : !!cfg.autoreply;
+            const scope = cfg.autoreplyScope || 'private';
+            await channelSender(message, client, `Auto-reply is *${enabled ? 'ENABLED' : 'DISABLED'}* \nScope: *${scope}*`, 1);
+            return;
+        }
+
+        if (lower.includes("on")) {
+            configManager.config.users[number].autoreply = true;
+            configManager.save();
+            await channelSender(message, client, "Auto-reply has been turned ON", 1);
+            return;
+        }
+
+        if (lower.includes("off")) {
+            configManager.config.users[number].autoreply = false;
+            configManager.save();
+            await channelSender(message, client, "Auto-reply has been turned OFF", 1);
+            return;
+        }
+
+        // set scope: private/groups/all
+        if (lower.includes('scope')) {
+            if (lower.includes('groups')) {
+                configManager.config.users[number].autoreplyScope = 'groups';
+                configManager.save();
+                await channelSender(message, client, "Auto-reply scope set to: groups", 1);
+                return;
+            }
+            if (lower.includes('all')) {
+                configManager.config.users[number].autoreplyScope = 'all';
+                configManager.save();
+                await channelSender(message, client, "Auto-reply scope set to: all", 1);
+                return;
+            }
+            if (lower.includes('private')) {
+                configManager.config.users[number].autoreplyScope = 'private';
+                configManager.save();
+                await channelSender(message, client, "Auto-reply scope set to: private", 1);
+                return;
+            }
+            await channelSender(message, client, "Invalid scope. Use: scope private|groups|all", 2);
+            return;
+        }
+
+        await channelSender(message, client, "Usage: .setautoreply on|off OR .setautoreply scope private|groups|all", 2);
+
+    } catch (error) {
+        console.error("_Error changing the autoreply setting:_", error);
+    }
+}
+
 export async function setlike(message, client) {
 
     const number = client.user.id.split(':')[0];

@@ -47,13 +47,27 @@ async function connectToWhatsApp(handleMessage) {
             await handleMessage(msg, sock);
         } catch (err) {
             const sid = sock?.user?.id || sock?.user || 'unknown-sock';
-            if (err && /decrypt/i.test(String(err.message || err))) {
-                console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, err.message || err);
+            const msgErr = String(err.message || err || '');
+            if (/decrypt/i.test(msgErr)) {
+                console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, msgErr);
+                return;
+            }
+            if (/bad\s*mac/i.test(msgErr)) {
+                console.warn(`⚠️ [${sid}] Bad MAC / message authentication failed — ignoring message. This can indicate a corrupted or outdated session.`);
+                try {
+                    configManager.config.badMacCounts = configManager.config.badMacCounts || {};
+                    const prev = configManager.config.badMacCounts['auth'] || 0;
+                    configManager.config.badMacCounts['auth'] = prev + 1;
+                    configManager.save();
+                    console.warn(`⚠️ [${sid}] Incremented auth bad MAC counter: ${configManager.config.badMacCounts['auth']}`);
+                } catch (e) {
+                    console.error('Error incrementing auth Bad MAC counter:', e?.message || e);
+                }
                 return;
             }
             // Ignore session errors from libsignal (corrupted or invalid session)
-            if (err && /no sessions|SessionError/i.test(String(err.message || err))) {
-                console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, err.message || err);
+            if (/no sessions|SessionError/i.test(msgErr)) {
+                console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, msgErr);
                 return;
             }
             console.error(`Error in messages.upsert handler [${sid}]:`, err);
