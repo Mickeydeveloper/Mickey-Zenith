@@ -1,5 +1,9 @@
 import { isJidGroup } from "@whiskeysockets/baileys";
 
+// Cooldown per sender to avoid spamming replies (milliseconds)
+const REPLY_COOLDOWN_MS = 60 * 1000; // 60 seconds
+const lastReplyMap = new Map();
+
 const GREETINGS = ["hello", "hi", "hey", "good morning", "good evening", "good night"];
 const AUTO_REPLY = "Hello! How can I assist you today?";
 
@@ -17,7 +21,16 @@ export async function autoReply(message, client) {
         }
 
         // Ignore group messages
-        if (isJidGroup(remoteJid)) {
+        if (isJidGroup(remoteJid)) return;
+
+        // Ignore messages sent by this bot (avoid loops)
+        if (message?.key?.fromMe) return;
+
+        // Prevent replying too frequently to the same user
+        const now = Date.now();
+        const last = lastReplyMap.get(remoteJid) || 0;
+        if (now - last < REPLY_COOLDOWN_MS) {
+            console.log(`Skipping auto-reply to ${remoteJid} (cooldown)`);
             return;
         }
 
@@ -30,6 +43,8 @@ export async function autoReply(message, client) {
                 text: AUTO_REPLY,
                 quoted: message
             });
+            // record the reply time
+            lastReplyMap.set(remoteJid, Date.now());
             console.log(`✅ Auto-reply sent to ${remoteJid}`);
         }
     } catch (error) {
