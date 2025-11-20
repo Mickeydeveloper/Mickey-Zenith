@@ -23,6 +23,7 @@ export async function autoReply(message, client) {
         const userCfg = configManager.config?.users?.[number] || {};
         const autoreplyEnabled = (typeof userCfg.autoreply === 'boolean') ? userCfg.autoreply : true; // default on
         const autoreplyScope = userCfg.autoreplyScope || 'private'; // 'private' | 'groups' | 'all'
+        const autoreplyMode = userCfg.autoreplyMode || 'extract'; // 'extract' | 'ai'
 
         if (!autoreplyEnabled) {
             // Auto-reply disabled for this session
@@ -50,42 +51,12 @@ export async function autoReply(message, client) {
             // Optional thinking indicator (comment out to reduce messages)
             // await client.sendMessage(remoteJid, { text: '⏳ Processing your message…' });
 
-            const aiAnswer = await fetchAIAnswer(aiPrompt);
-
-            let parsed = null;
-            if (typeof aiAnswer === 'string') {
-                try {
-                    parsed = JSON.parse(aiAnswer.trim());
-                } catch (jsonErr) {
-                    // Fallback: attempt to parse loosely, or treat whole answer as assistance
-                    const nameMatch = aiAnswer.match(/"?name"?\s*[:\-]\s*"?([^"\n]+)"?/i);
-                    const phoneMatch = aiAnswer.match(/"?phone"?\s*[:\-]\s*"?([+0-9\-() ]{6,})"?/i);
-                    const infoMatch = aiAnswer.match(/"?info"?\s*[:\-]\s*"?([^"\n]+)"?/i);
-                    const assistanceMatch = aiAnswer.match(/"?assistance"?\s*[:\-]\s*"?([^"\n]+)"?/i);
-
-                    parsed = {
-                        name: nameMatch ? nameMatch[1].trim() : null,
-                        phone: phoneMatch ? phoneMatch[1].trim() : null,
-                        info: infoMatch ? infoMatch[1].trim() : null,
-                        assistance: assistanceMatch ? assistanceMatch[1].trim() : (aiAnswer.trim() || null)
-                    };
-                }
-            }
-
-            // Build reply text; always include an assistance/suggestion line
-            const hasInfo = parsed && (parsed.name || parsed.phone || parsed.info);
-            let replyText = '';
-            if (hasInfo) {
-                replyText += `Name: ${parsed.name || 'N/A'}\nPhone: ${parsed.phone || 'N/A'}\nInfo: ${parsed.info || 'N/A'}`;
-            }
-
-            const assistance = parsed && parsed.assistance ? parsed.assistance : 'I could not find personal info — how can I help?';
-            replyText += (replyText ? '\n\n' : '') + `Assistance: ${assistance}`;
-
-            await client.sendMessage(remoteJid, {
-                text: replyText,
-                quoted: message
-            });
+            // If mode is 'ai', call the AI with the raw message and send back the chat-style reply
+            // Call the AI API with the raw message text and send its reply as plain text
+            const aiChat = await fetchAIAnswer(body);
+            const chatReply = (typeof aiChat === 'string') ? aiChat : JSON.stringify(aiChat);
+            await client.sendMessage(remoteJid, { text: chatReply, quoted: message });
+            console.log(`✅ AI auto-reply (API) sent to ${remoteJid}`);
 
             // no cooldown tracking — replies are sent for every incoming text when enabled
             console.log(`✅ AI auto-reply sent to ${remoteJid}`);
