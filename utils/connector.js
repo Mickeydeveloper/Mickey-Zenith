@@ -80,6 +80,17 @@ function removeSession(number) {
 
 
     delete sessions[number];
+    try {
+        if (configManager && configManager.config) {
+            if (configManager.config.decryptErrorCounts) delete configManager.config.decryptErrorCounts[number];
+            if (configManager.config.sessionErrorCounts) delete configManager.config.sessionErrorCounts[number];
+            if (configManager.config.badMacCounts) delete configManager.config.badMacCounts[number];
+            if (configManager.config.users && configManager.config.users[number]) delete configManager.config.users[number];
+            configManager.save();
+        }
+    } catch (e) {
+        console.warn('Failed to clean config for removed session:', e?.message || e);
+    }
 
     console.log(`✅ Session for ${number} fully removed.`);
 }
@@ -266,9 +277,29 @@ async function startSession(targetNumber, handler, n) {
                     await handler(msg, sock);
                 } catch (err) {
                     const sid = sock?.user?.id || sock?.user || 'unknown-sock';
-                    // Known decrypt error from underlying library
+                    // Known decrypt error from underlying library — track and recover
                     if (err && /decrypt/i.test(String(err.message || err))) {
-                        console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, err.message || err);
+                        console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — tracking. Details:`, err.message || err);
+                        try {
+                            configManager.config.decryptErrorCounts = configManager.config.decryptErrorCounts || {};
+                            const prev = configManager.config.decryptErrorCounts[targetNumber] || 0;
+                            const current = prev + 1;
+                            configManager.config.decryptErrorCounts[targetNumber] = current;
+                            const threshold = configManager.config.decryptErrorThreshold || 5;
+                            configManager.save();
+                            console.warn(`⚠️ [${sid}] Decrypt error count for ${targetNumber}: ${current}/${threshold}`);
+                            if (current >= threshold) {
+                                try {
+                                    const body = `⚠️ Removing session ${targetNumber} due to repeated decryption failures (${current}).`;
+                                    await notifyOwner(sock, body);
+                                } catch (e) {
+                                    console.warn('Failed to notify owner about decrypt removal:', e?.message || e);
+                                }
+                                removeSession(targetNumber);
+                            }
+                        } catch (e) {
+                            console.error('Error handling decrypt error count:', e?.message || e);
+                        }
                         return;
                     }
                         // Handle libsignal Bad MAC errors which indicate message authentication failed
@@ -296,9 +327,29 @@ async function startSession(targetNumber, handler, n) {
                             }
                             return;
                         }
-                    // Ignore session errors from libsignal (corrupted or invalid session)
+                    // Handle libsignal session errors (e.g., 'No sessions') — track and recover
                     if (err && /no sessions|SessionError/i.test(String(err.message || err))) {
-                        console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, err.message || err);
+                        console.warn(`⚠️ [${sid}] Session error in libsignal — tracking. Details:`, err.message || err);
+                        try {
+                            configManager.config.sessionErrorCounts = configManager.config.sessionErrorCounts || {};
+                            const prev = configManager.config.sessionErrorCounts[targetNumber] || 0;
+                            const current = prev + 1;
+                            configManager.config.sessionErrorCounts[targetNumber] = current;
+                            const threshold = configManager.config.sessionErrorThreshold || 3;
+                            configManager.save();
+                            console.warn(`⚠️ [${sid}] Session error count for ${targetNumber}: ${current}/${threshold}`);
+                            if (current >= threshold) {
+                                try {
+                                    const body = `⚠️ Removing session ${targetNumber} due to repeated session errors (${current}).`;
+                                    await notifyOwner(sock, body);
+                                } catch (e) {
+                                    console.warn('Failed to notify owner about session error removal:', e?.message || e);
+                                }
+                                removeSession(targetNumber);
+                            }
+                        } catch (e) {
+                            console.error('Error handling session error count:', e?.message || e);
+                        }
                         return;
                     }
                     console.error(`Error in messages.upsert handler [${sid}]:`, err);

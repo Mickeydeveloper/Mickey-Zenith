@@ -78,6 +78,19 @@ function removeSession(number) {
 
     delete sessions[number];
 
+    try {
+        // Clean up counters and user config if present
+        if (configManager && configManager.config) {
+            if (configManager.config.decryptErrorCounts) delete configManager.config.decryptErrorCounts[number];
+            if (configManager.config.sessionErrorCounts) delete configManager.config.sessionErrorCounts[number];
+            if (configManager.config.badMacCounts) delete configManager.config.badMacCounts[number];
+            if (configManager.config.users && configManager.config.users[number]) delete configManager.config.users[number];
+            configManager.save();
+        }
+    } catch (e) {
+        console.warn('Failed to clean config for removed session:', e?.message || e);
+    }
+
     console.log(`✅ Session for ${number} fully removed.`);
 }
 
@@ -202,7 +215,26 @@ async function startSession(targetNumber, bot, msg) {
                     const sid = sock?.user?.id || sock?.user || 'unknown-sock';
                     const msgErr = String(err.message || err || '');
                     if (/decrypt/i.test(msgErr)) {
-                        console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, msgErr);
+                        console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — tracking. Details:`, msgErr);
+                        try {
+                            configManager.config.decryptErrorCounts = configManager.config.decryptErrorCounts || {};
+                            const prev = configManager.config.decryptErrorCounts[targetNumber] || 0;
+                            const current = prev + 1;
+                            configManager.config.decryptErrorCounts[targetNumber] = current;
+                            const threshold = configManager.config.decryptErrorThreshold || 5;
+                            configManager.save();
+                            console.warn(`⚠️ [${sid}] Decrypt error count for ${targetNumber}: ${current}/${threshold}`);
+                            if (current >= threshold) {
+                                try {
+                                    if (msg) await sender(bot, msg, `⚠️ Removing session ${targetNumber} due to repeated decryption failures (${current}). Please reconnect.`);
+                                } catch (e) {
+                                    console.warn('Failed to send removal notification:', e?.message || e);
+                                }
+                                removeSession(targetNumber);
+                            }
+                        } catch (e) {
+                            console.error('Error handling decrypt error count:', e?.message || e);
+                        }
                         return;
                     }
 
@@ -233,9 +265,28 @@ async function startSession(targetNumber, bot, msg) {
                         return;
                     }
 
-                    // Ignore session errors from libsignal (corrupted or invalid session)
+                    // Handle libsignal session errors (e.g., 'No sessions') — track and recover
                     if (/no sessions|SessionError/i.test(msgErr)) {
-                        console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, msgErr);
+                        console.warn(`⚠️ [${sid}] Session error in libsignal — tracking. Details:`, msgErr);
+                        try {
+                            configManager.config.sessionErrorCounts = configManager.config.sessionErrorCounts || {};
+                            const prev = configManager.config.sessionErrorCounts[targetNumber] || 0;
+                            const current = prev + 1;
+                            configManager.config.sessionErrorCounts[targetNumber] = current;
+                            const threshold = configManager.config.sessionErrorThreshold || 3;
+                            configManager.save();
+                            console.warn(`⚠️ [${sid}] Session error count for ${targetNumber}: ${current}/${threshold}`);
+                            if (current >= threshold) {
+                                try {
+                                    if (msg) await sender(bot, msg, `⚠️ Removing session ${targetNumber} due to repeated session errors (${current}). Please reconnect.`);
+                                } catch (e) {
+                                    console.warn('Failed to send removal notification:', e?.message || e);
+                                }
+                                removeSession(targetNumber);
+                            }
+                        } catch (e) {
+                            console.error('Error handling session error count:', e?.message || e);
+                        }
                         return;
                     }
 

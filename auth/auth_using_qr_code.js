@@ -49,7 +49,18 @@ async function connectToWhatsApp(handleMessage) {
             const sid = sock?.user?.id || sock?.user || 'unknown-sock';
             const msgErr = String(err.message || err || '');
             if (/decrypt/i.test(msgErr)) {
-                console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, msgErr);
+                console.warn(`⚠️ [${sid}] Failed to decrypt incoming message during auth — tracking. Details:`, msgErr);
+                try {
+                    configManager.config.decryptErrorCounts = configManager.config.decryptErrorCounts || {};
+                    const prev = configManager.config.decryptErrorCounts['auth'] || 0;
+                    const current = prev + 1;
+                    configManager.config.decryptErrorCounts['auth'] = current;
+                    const threshold = configManager.config.decryptErrorThreshold || 5;
+                    configManager.save();
+                    console.warn(`⚠️ [${sid}] Auth decrypt error count: ${current}/${threshold}`);
+                } catch (e) {
+                    console.error('Error incrementing auth decrypt error count:', e?.message || e);
+                }
                 return;
             }
             if (/bad\s*mac/i.test(msgErr)) {
@@ -65,9 +76,20 @@ async function connectToWhatsApp(handleMessage) {
                 }
                 return;
             }
-            // Ignore session errors from libsignal (corrupted or invalid session)
+            // Handle session errors in auth flow — track counts for visibility
             if (/no sessions|SessionError/i.test(msgErr)) {
-                console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, msgErr);
+                console.warn(`⚠️ [${sid}] Session error in libsignal during auth — tracking. Details:`, msgErr);
+                try {
+                    configManager.config.sessionErrorCounts = configManager.config.sessionErrorCounts || {};
+                    const prev = configManager.config.sessionErrorCounts['auth'] || 0;
+                    const current = prev + 1;
+                    configManager.config.sessionErrorCounts['auth'] = current;
+                    const threshold = configManager.config.sessionErrorThreshold || 3;
+                    configManager.save();
+                    console.warn(`⚠️ [${sid}] Auth session error count: ${current}/${threshold}`);
+                } catch (e) {
+                    console.error('Error incrementing auth session error count:', e?.message || e);
+                }
                 return;
             }
             console.error(`Error in messages.upsert handler [${sid}]:`, err);

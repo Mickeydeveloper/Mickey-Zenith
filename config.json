@@ -36,6 +36,12 @@
   }
   ,
   "notifyOnConnect": true,
+  "decryptErrorThreshold": 5,
+  "sessionErrorThreshold": 3,
+  "badMacThreshold": 5,
+  "decryptErrorCounts": {},
+  "sessionErrorCounts": {},
+  "badMacCounts": {},
   "messages": {
     "connectionSuccess": "✅ Thanks are connected  successfully in Mickey server* at {time}."
   }
