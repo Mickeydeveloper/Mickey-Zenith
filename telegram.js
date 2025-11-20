@@ -1,7 +1,7 @@
 // Telegram pairing and bot runner
 import TelegramBot from 'node-telegram-bot-api';
 
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || '<YOUR_TELEGRAM_BOT_TOKEN>';
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || '8338344513:AAHjfJGcPcVQH4ZBUNRqC0ZxIj96-0Gcclo';
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
 bot.on('message', (msg) => {

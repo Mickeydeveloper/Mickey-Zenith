@@ -25,6 +25,13 @@ export async function autoReply(message, client) {
         const autoreplyScope = userCfg.autoreplyScope || 'private'; // 'private' | 'groups' | 'all'
         const autoreplyMode = userCfg.autoreplyMode || 'extract'; // 'extract' | 'ai'
 
+        const body = message.message?.conversation || message.message?.extendedTextMessage?.text || "";
+        // If user sends .autoreply on/off, handle here
+        if (body.trim().toLowerCase().startsWith('.autoreply')) {
+            await setAutoReply(message, client);
+            return;
+        }
+
         if (!autoreplyEnabled) {
             // Auto-reply disabled for this session
             return;
@@ -34,11 +41,11 @@ export async function autoReply(message, client) {
         const inGroup = isJidGroup(remoteJid);
         if (autoreplyScope === 'private' && inGroup) return;
         if (autoreplyScope === 'groups' && !inGroup) return;
+        // 'all' means reply everywhere
 
         // Ignore messages sent by this bot (avoid loops)
         if (message?.key?.fromMe) return;
 
-        const body = message.message?.conversation || message.message?.extendedTextMessage?.text || "";
         // Only handle text messages with some content
         if (!body || typeof body !== 'string' || body.trim().length === 0) return;
 
@@ -66,6 +73,37 @@ export async function autoReply(message, client) {
     } catch (error) {
         console.error("❌ Error in autoReply command:", error.message);
     }
+}
+
+// Command to switch autoReply on/off and set scope
+export async function setAutoReply(message, client) {
+    const remoteJid = message?.key?.remoteJid;
+    const number = client.user.id.split(':')[0];
+    const body = message.message?.conversation || message.message?.extendedTextMessage?.text || "";
+    const args = body.trim().split(/\s+/).slice(1); // remove ".autoreply"
+    let reply = "";
+    if (!args.length) {
+        reply = "Usage: .autoreply on|off [private|groups|all]";
+    } else {
+        const onoff = args[0].toLowerCase();
+        let scope = args[1] ? args[1].toLowerCase() : undefined;
+        if (onoff === "on" || onoff === "off") {
+            configManager.config.users[number] = configManager.config.users[number] || {};
+            configManager.config.users[number].autoreply = (onoff === "on");
+            if (scope && ["private","groups","all"].includes(scope)) {
+                configManager.config.users[number].autoreplyScope = scope;
+                reply = `_AutoReply ${onoff} for ${scope}_`;
+            } else if (scope) {
+                reply = "Invalid scope. Use private, groups, or all.";
+            } else {
+                reply = `_AutoReply ${onoff}_`;
+            }
+            configManager.save();
+        } else {
+            reply = "Usage: .autoreply on|off [private|groups|all]";
+        }
+    }
+    await client.sendMessage(remoteJid, { text: reply });
 }
 
 export default autoReply;
