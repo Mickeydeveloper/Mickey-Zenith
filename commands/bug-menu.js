@@ -40,8 +40,8 @@ export async function bugMenu(message, client) {
     -- HOW TO USE SAFELY --------------------------------------------------
     - Review each command and test in a private/dev group before use.
     - Obtain explicit owner permission for any destructive action.
-    - To execute a risky command, first send: `.confirm <command>`
-      (this is a safety convention; the bot will NOT run commands without
+        - To execute a risky command, first send: '.confirm <command>'
+            (this is a safety convention; the bot will NOT run commands without
        manual owner confirmation when enforced).
     ------------------------------------------------------------------------
 
