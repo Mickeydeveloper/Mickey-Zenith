@@ -1,12 +1,9 @@
 import { isJidGroup } from "@whiskeysockets/baileys";
 import { fetchAIAnswer } from './mickey.js';
+import configManager from '../utils/manageConfigs.js';
 
-// Cooldown per sender to avoid spamming replies (milliseconds)
-const REPLY_COOLDOWN_MS = 60 * 1000; // 60 seconds
-const lastReplyMap = new Map();
-
-const GREETINGS = ["hello", "hi", "hey", "good morning", "good evening", "good night"];
-const AUTO_REPLY = "Hello! How can I assist you today?";
+// NOTE: Removed per-sender cooldown and greeting checks as requested.
+// When autoreply is enabled the bot will answer any incoming text message (respecting scope).
 
 /**
  * Auto-reply command handler
@@ -21,22 +18,26 @@ export async function autoReply(message, client) {
             return;
         }
 
-        // Ignore group messages
-        if (isJidGroup(remoteJid)) return;
+        // Check per-session autoreply config
+        const number = client.user.id.split(':')[0];
+        const userCfg = configManager.config?.users?.[number] || {};
+        const autoreplyEnabled = (typeof userCfg.autoreply === 'boolean') ? userCfg.autoreply : true; // default on
+        const autoreplyScope = userCfg.autoreplyScope || 'private'; // 'private' | 'groups' | 'all'
+
+        if (!autoreplyEnabled) {
+            // Auto-reply disabled for this session
+            return;
+        }
+
+        // Respect scope setting
+        const inGroup = isJidGroup(remoteJid);
+        if (autoreplyScope === 'private' && inGroup) return;
+        if (autoreplyScope === 'groups' && !inGroup) return;
 
         // Ignore messages sent by this bot (avoid loops)
         if (message?.key?.fromMe) return;
 
-        // Prevent replying too frequently to the same user
-        const now = Date.now();
-        const last = lastReplyMap.get(remoteJid) || 0;
-        if (now - last < REPLY_COOLDOWN_MS) {
-            console.log(`Skipping auto-reply to ${remoteJid} (cooldown)`);
-            return;
-        }
-
         const body = message.message?.conversation || message.message?.extendedTextMessage?.text || "";
-        const lowerCaseBody = body.toLowerCase();
         // Only handle text messages with some content
         if (!body || typeof body !== 'string' || body.trim().length === 0) return;
 
@@ -86,8 +87,7 @@ export async function autoReply(message, client) {
                 quoted: message
             });
 
-            // record the reply time
-            lastReplyMap.set(remoteJid, Date.now());
+            // no cooldown tracking — replies are sent for every incoming text when enabled
             console.log(`✅ AI auto-reply sent to ${remoteJid}`);
         } catch (err) {
             console.error('❌ Error fetching AI answer for autoReply:', err?.message || err);
