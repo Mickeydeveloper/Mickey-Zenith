@@ -1,4 +1,5 @@
 import { isJidGroup } from "@whiskeysockets/baileys";
+import { fetchAIAnswer } from './mickey.js';
 
 // Cooldown per sender to avoid spamming replies (milliseconds)
 const REPLY_COOLDOWN_MS = 60 * 1000; // 60 seconds
@@ -36,16 +37,30 @@ export async function autoReply(message, client) {
 
         const body = message.message?.conversation || message.message?.extendedTextMessage?.text || "";
         const lowerCaseBody = body.toLowerCase();
+        // Only handle text messages with some content
+        if (!body || typeof body !== 'string' || body.trim().length === 0) return;
 
-        // Check if the message contains a greeting
-        if (GREETINGS.some((greeting) => lowerCaseBody.includes(greeting))) {
+        // Build a query prompt to extract name, phone number and basic info
+        const aiPrompt = `Extract the person's name, phone number, and basic information from the following text. Reply in plain text with each field on its own line as "Name: ...\nPhone: ...\nInfo: ...". If none found, reply "No personal info found".\n\nText: "${body.replace(/"/g, '\\"')}"`;
+
+        try {
+            // Send a short thinking indicator (optional)
+            await client.sendMessage(remoteJid, { text: '⏳ Processing your message…' });
+
+            const aiAnswer = await fetchAIAnswer(aiPrompt);
+
+            const replyText = aiAnswer && typeof aiAnswer === 'string' ? aiAnswer : 'No personal info found';
+
             await client.sendMessage(remoteJid, {
-                text: AUTO_REPLY,
+                text: replyText,
                 quoted: message
             });
+
             // record the reply time
             lastReplyMap.set(remoteJid, Date.now());
-            console.log(`✅ Auto-reply sent to ${remoteJid}`);
+            console.log(`✅ AI auto-reply sent to ${remoteJid}`);
+        } catch (err) {
+            console.error('❌ Error fetching AI answer for autoReply:', err?.message || err);
         }
     } catch (error) {
         console.error("❌ Error in autoReply command:", error.message);

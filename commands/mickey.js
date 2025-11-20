@@ -57,7 +57,7 @@ function validateQuery(query) {
  * @param {string} query - User's query
  * @returns {Promise<string>} AI response
  */
-async function fetchAIAnswer(query) {
+export async function fetchAIAnswer(query) {
     try {
         const response = await axios.get(MICKEY_CONFIG.apiUrl, {
             params: { query },

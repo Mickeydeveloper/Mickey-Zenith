@@ -16,6 +16,30 @@ const ORDER_CONFIG = {
     githubUrl: "https://github.com/Mickeydeveloper"
 };
 
+// Tiered pricing helper: larger bundles get a small discount
+function getPriceForBundle(gb) {
+    const base = ORDER_CONFIG.baseRate;
+    let discount = 0;
+    if (gb >= 50) discount = 0.12;
+    else if (gb >= 40) discount = 0.10;
+    else if (gb >= 30) discount = 0.08;
+    else if (gb >= 20) discount = 0.05;
+
+    const raw = gb * base * (1 - discount);
+    const price = Math.round(raw);
+    const perGB = Math.round((price / gb) * 100) / 100; // two decimals
+    return { price, perGB, discount };
+}
+
+// Format numbers as currency (TSHS)
+function formatCurrency(n) {
+    try {
+        return n.toLocaleString('en-US');
+    } catch (e) {
+        return String(n);
+    }
+}
+
 /**
  * Fetches and caches thumbnail for order messages
  * @returns {Promise<Buffer|null>} Thumbnail buffer or null if unavailable
@@ -61,9 +85,16 @@ function validateAndExtractUser(message) {
  */
 function formatBundleList() {
     const { baseRate, bundles } = ORDER_CONFIG;
+    // Build a nicely formatted list with per-GB price and savings
     return bundles
-        .map(gb => `📦 *${gb}GB* — 💸 *${gb * baseRate} TSHS*`)
-        .join("\n");
+        .map(gb => {
+            const { price, perGB, discount } = getPriceForBundle(gb);
+            const fullPrice = gb * baseRate; // price without discount
+            const savings = fullPrice - price;
+            const discountText = discount > 0 ? ` • ${Math.round(discount * 100)}% off` : '';
+            return `📦 *${gb}GB* — 💸 *${formatCurrency(price)} TSHS* (${perGB} TSH/GB)${discountText}${savings > 0 ? ` — Save ${formatCurrency(savings)} TSHS` : ''}`;
+        })
+        .join('\n');
 }
 
 /**
@@ -71,48 +102,52 @@ function formatBundleList() {
  * @param {string} name - Customer name
  * @returns {string} Formatted bundle message
  */
-function createBundleMessage(name) {
+
+// Pretty variants (non-destructive): improved appearance for bundles and payments
+function createBundleMessagePretty(name) {
     const { BOT_NAME_LOCAL: botName } = { BOT_NAME_LOCAL: BOT_NAME };
     const { baseRate } = ORDER_CONFIG;
     const bundleList = formatBundleList();
 
-    return `╭━━━〔 ✨ *${botName} — DATA BUNDLES* ✨ 〕━━━╮
-👋 Hello, *${name}*!
-
-${bundleList}
-
-💰 *Rate:* _1GB = ${baseRate} TSHS_
-
-🛒 *How to order:*
-➡️  Type: *Order <size>GB*
-   Example: *Order 10GB*
-
-⚡ Fast delivery | 💯 Trusted seller
-╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
+    return [
+        `╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮`,
+        `┃ ✨ ${botName} — DATA BUNDLES ✨`,
+        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`,
+        `👋 Hello, *${name}*!`,
+        ``,
+        bundleList,
+        ``,
+        `💰 Rate: _1GB = ${baseRate} TSHS_`,
+        ``,
+        `🛒 How to order:`,
+        `➡️  Type: *Order <size>GB*`,
+        `   Example: *Order 10GB*`,
+        ``,
+        `⚡ Fast delivery | 💯 Trusted seller`,
+        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`
+    ].join('\n');
 }
 
-/**
- * Creates the payment methods message
- * @returns {string} Formatted payment message
- */
-function createPaymentMessage() {
+function createPaymentMessagePretty() {
     const { tigo, halopesa, halotel, bank } = ORDER_CONFIG.paymentMethods;
 
-    return `╭━━━〔 💳 *PAYMENT METHODS* 💳 〕━━━╮
-Choose your preferred payment option:
-
-• 🟣 *Tigo Pesa:* ${tigo}
-• 🟢 *Halopesa 1:* ${halopesa}
-• 🔵 *Halotel / Others:* ${halotel}
-• 🏦 *Bank:* ${bank}
-
-📤 *After payment, send:*
-   - Your phone number
-   - Bundle size (e.g., *20GB*)
-   - Delivery method (SMS / Auto)
-
-⏱️ *Instant delivery after confirmation!*
-╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
+    return [
+        `╭━━━━━━━━━━━━〔 💳 PAYMENT METHODS 〕━━━━━━━━━━━━╮`,
+        `┃ Please choose one of the payment options below:`,
+        `┃`,
+        `┃ 🟣 Tigo Pesa: ${tigo}`,
+        `┃ 🟢 Halopesa: ${halopesa}`,
+        `┃ 🔵 Halotel / Others: ${halotel}`,
+        `┃ 🏦 Bank: ${bank}`,
+        `┃`,
+        `┃ After payment, please send:`,
+        `┃ • Your phone number`,
+        `┃ • Bundle size (e.g., 20GB)`,
+        `┃ • Delivery method (SMS / Auto)`,
+        `┃`,
+        `┃ ⏱️ Instant delivery after confirmation`,
+        `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`
+    ].join('\n');
 }
 
 /**
@@ -169,8 +204,8 @@ export async function order(message, client) {
         // Fetch thumbnail
         const thumbnail = await fetchThumbnail();
 
-        // Create and send bundle message
-        const bundleMessage = createBundleMessage(name);
+        // Create and send bundle message (pretty variant)
+        const bundleMessage = createBundleMessagePretty(name);
         const sent = await sendOrderMessage(client, remoteJid, bundleMessage, thumbnail);
 
         if (!sent?.key?.id) {
@@ -182,8 +217,8 @@ export async function order(message, client) {
         // Wait for smooth transition
         await sleep(ORDER_CONFIG.messageDelay);
 
-        // Create and send payment message (or edit if supported)
-        const paymentMessage = createPaymentMessage();
+        // Create and send payment message (pretty variant)
+        const paymentMessage = createPaymentMessagePretty();
         await client.sendMessage(remoteJid, {
             text: paymentMessage,
             disappearingMessagesInChat: 30 // Messages disappear after 30 seconds
