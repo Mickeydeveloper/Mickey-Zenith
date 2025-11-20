@@ -1,90 +1,77 @@
 
+import fs from 'fs';
+import path from 'path';
+import sender from '../commands/sender.js';
 import configManager from '../utils/manageConfigs.js';
 
-import fs from "fs";
+const SESSIONS_FILE = path.join(process.cwd(), 'sessions.json');
 
-import fsp from "fs/promises";
+async function disconnect(message, client) {
+    const remoteJid = message.key?.remoteJid;
+    if (!remoteJid) throw new Error('Message JID is undefined.');
 
-import sender from '../utils/sender.js';
+    const messageBody = message.message?.extendedTextMessage?.text || message.message?.conversation || '';
+    const commandAndArgs = messageBody.slice(1).trim();
+    const parts = commandAndArgs.split(/\s+/);
+    const args = parts.slice(1);
 
-const SESSIONS_FILE = "./sessions.json";
+    let participant;
 
-const sessions = {};
-
-
-function removeSession(number, bot, msg) {
-
-	const chatId = msg.chat.id;
-
-    if (fs.existsSync(SESSIONS_FILE)) {
-
-        let sessionsList = [];
-
-        try {
-
-            const data = JSON.parse(fs.readFileSync(SESSIONS_FILE));
-
-            sessionsList = Array.isArray(data.sessions) ? data.sessions : [];
-
-        } catch (err) {
-
-            sessionsList = [];
-
-            return bot.sendMessage(chatId, `❌ Error reading sessions file: ${err}`, { parse_mode: "Markdown" });
-
-            
-        }
-
-        sessionsList = sessionsList.filter(num => num !== number);
-
-        fs.writeFileSync(SESSIONS_FILE, JSON.stringify({ sessions: sessionsList }, null, 2));
+    // Handle reply to message (try to extract participant JID if present)
+    if (message.message?.extendedTextMessage?.contextInfo?.participant) {
+        participant = message.message.extendedTextMessage.contextInfo.participant;
+    } else if (args.length > 0) {
+        participant = args[0];
+    } else {
+        throw new Error('Specify the person to disconnect. Usage: .disconnect <number>');
     }
 
-    const sessionPath = `./sessions/${number}`;
+    // sanitize number
+    const number = String(participant).replace(/[^0-9]/g, '');
+    if (!number) throw new Error('Could not parse a valid number from the argument.');
 
+    const sessionPath = path.join(process.cwd(), `sessions/${number}`);
+
+    let removed = false;
     if (fs.existsSync(sessionPath)) {
-
-        fs.rmSync(sessionPath, { recursive: true, force: true });
+        try {
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+            removed = true;
+        } catch (error) {
+            await sender(message, client, `❌ Error deleting auth info for ${number}: ${error?.message || error}`);
+            return;
+        }
     }
 
-
-    delete sessions[number];
+    // Update sessions.json
     try {
-        if (configManager && configManager.config) {
-            if (configManager.config.decryptErrorCounts) delete configManager.config.decryptErrorCounts[number];
-            if (configManager.config.sessionErrorCounts) delete configManager.config.sessionErrorCounts[number];
-            if (configManager.config.badMacCounts) delete configManager.config.badMacCounts[number];
-            if (configManager.config.users && configManager.config.users[number]) delete configManager.config.users[number];
-            configManager.save();
+        if (fs.existsSync(SESSIONS_FILE)) {
+            const data = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf-8')) || {};
+            const list = Array.isArray(data.sessions) ? data.sessions : [];
+            const updated = list.filter(n => String(n) !== String(number));
+            fs.writeFileSync(SESSIONS_FILE, JSON.stringify({ sessions: updated }, null, 2));
         }
     } catch (e) {
-        console.warn('Failed to clean config for removed session:', e?.message || e);
+        console.warn('Failed to update sessions.json:', e?.message || e);
     }
 
-    console.log(`✅ Session for ${number} fully removed.`);
-
-
-    return bot.sendMessage(chatId, "Session deleted sucessfully\n Thanks for using our service\n Hope you enjoyed.", { parse_mode: "Markdown" });
-}
-
-export async function disconnect(bot, msg, match) {
-
-    const chatId = msg.chat.id;
-
-    const text = match?.[1]?.trim();
-
-    if (!text) {
-
-        return bot.sendMessage(chatId, "❌ Please provide a phone number.\nUsage: `/disconnect <number>`", { parse_mode: "Markdown" });
+    // Clear counters and config entries
+    try {
+        const cfg = configManager.config || {};
+        if (cfg.decryptErrorCounts && cfg.decryptErrorCounts[number]) delete cfg.decryptErrorCounts[number];
+        if (cfg.sessionErrorCounts && cfg.sessionErrorCounts[number]) delete cfg.sessionErrorCounts[number];
+        if (cfg.badMacCounts && cfg.badMacCounts[number]) delete cfg.badMacCounts[number];
+        if (cfg.users && cfg.users[number]) delete cfg.users[number];
+        configManager.save();
+    } catch (e) {
+        console.warn('Failed to clear config counters for removed session:', e?.message || e);
     }
 
-    const targetNumber = text.replace(/\D/g, "");
-
-    console.log("Sanitized number:", targetNumber);
-
-
-    return removeSession(targetNumber, bot, msg);
-
+    if (removed) {
+        await sender(message, client, `✅ Auth information and session for ${number} deleted successfully.`);
+    } else {
+        await sender(message, client, `ℹ️ No session folder found for ${number}, but counters/config were cleared if present.`);
+    }
 }
 
-export default disconnect ;
+export default disconnect;
