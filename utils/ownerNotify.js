@@ -1,4 +1,5 @@
 import { OWNER_NUM } from '../config.js';
+import configManager from './manageConfigs.js';
 
 /**
  * Send a notification to the bot owner
@@ -7,6 +8,16 @@ import { OWNER_NUM } from '../config.js';
  * @param {Object} options - Additional options (e.g., mentionedJid)
  */
 export async function notifyOwner(client, text, options = {}) {
+    // Respect global config toggle to disable owner notifications
+    try {
+        const cfg = configManager.config || {};
+        if (cfg.notifyOwnerEnabled === false) {
+            console.log('Owner notifications are disabled by configuration; skipping notifyOwner.');
+            return;
+        }
+    } catch (e) {
+        // if config read fails, proceed with notification to avoid hiding real errors
+    }
     try {
         const ownerJid = `${OWNER_NUM}@s.whatsapp.net`;
         // Avoid generating link previews which require the optional 'link-preview-js' package

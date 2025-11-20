@@ -1,5 +1,6 @@
 import fs from 'fs/promises'; // For async file operations
 import path from 'path';
+import notifyOwner from '../utils/ownerNotify.js';
 
 // Utility to generate a timestamp for logging and filenames
 const getTimestamp = () => new Date().toISOString().replace(/[:.]/g, '-');
@@ -119,6 +120,18 @@ async function report(
       console.error(`❌ Attempt ${attempts}/${maxAttempts} failed to report user:`, err.message);
       if (attempts === maxAttempts) {
         console.error('❌ Max retry attempts reached. Report failed.');
+        // Notify owner with report file (if available)
+        try {
+          const content = await fs.readFile(path.resolve(reportFilePath), 'utf-8').catch(() => 'Unable to read report file');
+          // Truncate content to reasonable length
+          const snippet = String(content).slice(0, 4000);
+          await notifyOwner(sock, `⚠️ Report failed for ${jid} after ${maxAttempts} attempts. Report saved to ${reportFilePath}.
+
+Report preview:
+${snippet}`, { detectLinks: false });
+        } catch (notifyErr) {
+          console.error('❌ Failed to notify owner about failed report:', notifyErr?.message || notifyErr);
+        }
         throw err; // Rethrow after max attempts
       }
       // Wait before retrying (exponential backoff: 1s, 2s, 4s)

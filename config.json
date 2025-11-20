@@ -36,6 +36,7 @@
   }
   ,
   "notifyOnConnect": true,
+  "notifyOwnerEnabled": false,
   "decryptErrorThreshold": 5,
   "sessionErrorThreshold": 3,
   "badMacThreshold": 5,
