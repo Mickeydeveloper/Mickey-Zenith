@@ -28,6 +28,7 @@
   "homepage": "https://github.com/Mickeydeveloper/Mickey-Zenith#readme",
   "dependencies": {
     "axios-retry": "^4.5.0",
+    "baileys": "6.7.21",
     "@whiskeysockets/baileys": "npm:@fizzxydev/baileys-pro@^8.5.12",
     "fluent-ffmpeg": "^2.1.3",
     "node-fetch": "^3.3.2",
