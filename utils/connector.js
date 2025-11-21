@@ -125,31 +125,25 @@ async function startSession(targetNumber, handler, n) {
             sock.ev.on('creds.update', saveCreds);
 
             sock.ev.on('connection.update', async (update) => {
-
                 const { connection, lastDisconnect } = update;
-
                 if (connection === 'close') {
-
                     console.log("Session closed for:", targetNumber);
-
-                    const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-
+                    const statusCode = lastDisconnect?.error?.output?.statusCode;
+                    if (statusCode === DisconnectReason.connectionReplaced) {
+                        console.log(`⚠️ Connection replaced for ${targetNumber}. Session not removed, waiting for reconnect.`);
+                        // Do not remove session, just wait for reconnect
+                        return;
+                    }
+                    const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== DisconnectReason.badSession;
                     if (shouldReconnect) {
-                        
                         startSession(targetNumber, handler);
-
                     } else {
-
-                        console.log(`❌ User logged out, removing session for ${targetNumber}`);
-
+                        console.log(`❌ User logged out or bad session, removing session for ${targetNumber}`);
                         removeSession(targetNumber);
-
-                       if (targetNumber == configManager.config?.users["root"]?.primary) {
-
+                        if (targetNumber == configManager.config?.users["root"]?.primary) {
                             configManager.config.users["root"].primary = "";
-                            
                             configManager.save();
-                        }       
+                        }
                     }
                 } else if (connection === 'open') {
 
