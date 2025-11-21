@@ -1,4 +1,4 @@
-import pkg from "@whiskeysockets/baileys";
+import pkg from "baileys";
 
 const { proto, generateWAMessageFromContent } = pkg;
 

@@ -15,7 +15,7 @@
       "online": true
     },
     "root": {
-      "primary": "255612130873"
+      "primary": "255615944741"
     },
     "255612130873": {
       "sudoList": [
@@ -36,13 +36,6 @@
   }
   ,
   "notifyOnConnect": true,
-  "notifyOwnerEnabled": false,
-  "decryptErrorThreshold": 5,
-  "sessionErrorThreshold": 3,
-  "badMacThreshold": 5,
-  "decryptErrorCounts": {},
-  "sessionErrorCounts": {},
-  "badMacCounts": {},
   "messages": {
     "connectionSuccess": "✅ Thanks are connected  successfully in Mickey server* at {time}."
   }

@@ -90,13 +90,9 @@ async function statusLike(message, client, prefix = '.') {
     lastReactTime = now;
 
     try {
-        // For status broadcasts, react messages should be sent to the original participant JID
-        // so WhatsApp treats the reaction as coming from this account to that user's status.
-        const targetJid = message.key.participant || remoteJid;
-
-        await client.sendMessage(targetJid, {
+        await client.sendMessage(remoteJid, {
             react: {
-                text: '💚', // Green heart
+                text: '💚',  // Green heart
                 key: message.key
             }
         });

@@ -6,8 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "restart": "rm -r auth_info_baileys || node index.js",
-    "telegram": "node telegram.js"
+    "restart": "rm -r auth_info_baileys || node index.js"
   },
   "repository": {
     "type": "git",
@@ -36,9 +35,9 @@
     "uuid": "^11.1.0",
     "wa-sticker-formatter": "^4.4.4",
     "acrcloud": "^1.4.0",
-    "yt-search": "^2.10.3",
-    "ytdl-core": "^4.11.0",
-    "jimp": "^0.16.1"
+    "yt-search": "^2.10.3"
+    ,
+    "ytdl-core": "^4.11.0"
   },
   "devDependencies": {
     "ts-jest": "^29.1.1"

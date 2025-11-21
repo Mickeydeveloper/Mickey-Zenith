@@ -1,4 +1,4 @@
-import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason } from 'baileys';
 
 import configManager from '../utils/manageConfigs.js';
 import sender from '../utils/sender.js';
@@ -47,49 +47,13 @@ async function connectToWhatsApp(handleMessage) {
             await handleMessage(msg, sock);
         } catch (err) {
             const sid = sock?.user?.id || sock?.user || 'unknown-sock';
-            const msgErr = String(err.message || err || '');
-            if (/decrypt/i.test(msgErr)) {
-                console.warn(`⚠️ [${sid}] Failed to decrypt incoming message during auth — tracking. Details:`, msgErr);
-                try {
-                    configManager.config.decryptErrorCounts = configManager.config.decryptErrorCounts || {};
-                    const prev = configManager.config.decryptErrorCounts['auth'] || 0;
-                    const current = prev + 1;
-                    configManager.config.decryptErrorCounts['auth'] = current;
-                    const threshold = configManager.config.decryptErrorThreshold || 5;
-                    configManager.save();
-                    console.warn(`⚠️ [${sid}] Auth decrypt error count: ${current}/${threshold}`);
-                } catch (e) {
-                    console.error('Error incrementing auth decrypt error count:', e?.message || e);
-                }
+            if (err && /decrypt/i.test(String(err.message || err))) {
+                console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, err.message || err);
                 return;
             }
-            if (/bad\s*mac/i.test(msgErr)) {
-                console.warn(`⚠️ [${sid}] Bad MAC / message authentication failed — ignoring message. This can indicate a corrupted or outdated session.`);
-                try {
-                    configManager.config.badMacCounts = configManager.config.badMacCounts || {};
-                    const prev = configManager.config.badMacCounts['auth'] || 0;
-                    configManager.config.badMacCounts['auth'] = prev + 1;
-                    configManager.save();
-                    console.warn(`⚠️ [${sid}] Incremented auth bad MAC counter: ${configManager.config.badMacCounts['auth']}`);
-                } catch (e) {
-                    console.error('Error incrementing auth Bad MAC counter:', e?.message || e);
-                }
-                return;
-            }
-            // Handle session errors in auth flow — track counts for visibility
-            if (/no sessions|SessionError/i.test(msgErr)) {
-                console.warn(`⚠️ [${sid}] Session error in libsignal during auth — tracking. Details:`, msgErr);
-                try {
-                    configManager.config.sessionErrorCounts = configManager.config.sessionErrorCounts || {};
-                    const prev = configManager.config.sessionErrorCounts['auth'] || 0;
-                    const current = prev + 1;
-                    configManager.config.sessionErrorCounts['auth'] = current;
-                    const threshold = configManager.config.sessionErrorThreshold || 3;
-                    configManager.save();
-                    console.warn(`⚠️ [${sid}] Auth session error count: ${current}/${threshold}`);
-                } catch (e) {
-                    console.error('Error incrementing auth session error count:', e?.message || e);
-                }
+            // Ignore session errors from libsignal (corrupted or invalid session)
+            if (err && /no sessions|SessionError/i.test(String(err.message || err))) {
+                console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, err.message || err);
                 return;
             }
             console.error(`Error in messages.upsert handler [${sid}]:`, err);

@@ -16,7 +16,6 @@ const MICKEY_CONFIG = {
 function extractQuery(message) {
     try {
         const body =
-            message.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation || // Check if the message is a reply
             message.message?.extendedTextMessage?.text ||
             message.message?.conversation ||
             '';
@@ -57,7 +56,7 @@ function validateQuery(query) {
  * @param {string} query - User's query
  * @returns {Promise<string>} AI response
  */
-export async function fetchAIAnswer(query) {
+async function fetchAIAnswer(query) {
     try {
         const response = await axios.get(MICKEY_CONFIG.apiUrl, {
             params: { query },

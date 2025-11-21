@@ -37,23 +37,18 @@ export async function info(message, client) {
 │ Type : not for everyone, not yet released        
 ╰─────────────────╯
 
-╭──[ FEATURES  ]─────╮
+╭──[ ✨ MENUS ✨ ]─────╮
 │
-│ ⇛ autoReply
-│ ⇛ group management
-│ ⇛ status viewer/liker
-│ ⇛ downloader (audio, video, images)
-│ ⇛ fast responses
-│ ⇛ tagging tools
-│ ⇛ bug commands
+│ ⇛ menu
+│ ⇛ prem-menu
+│ ⇛ bug-menu
 ╰─────────────────╯
 
-╭──[  control   ]──────╮
+╭──[ 📃 STABLE 📃 ]──────╮
 │ 
 │ ⇛ ping
 │ ⇛ getid
 │ ⇛ alive
-│ ⇛ confirm
 │ ⇛ sudo
 │ ⇛ tourl
 │ ⇛ owner    
@@ -66,7 +61,7 @@ export async function info(message, client) {
 │ ⇛ order  
 ╰─────────────────╯
 
-╭──[  CONFIG  ]─────╮
+╭──[ 🔎 CONFIG 🔎 ]─────╮
 │
 │ ⇛ online
 │ ⇛ welcome
@@ -75,11 +70,10 @@ export async function info(message, client) {
 │ ⇛ setprefix
 │ ⇛ getconfig
 │ ⇛ statuslike
-│ ⇛ statusview
 │ ⇛ autorecord        
 ╰─────────────────╯
 
-╭──[  GROUP  ]─────╮
+╭──[ ✘ GROUP ✘ ]─────╮
 |
 | ⇛ dlt
 │ ⇛ bye
@@ -96,7 +90,7 @@ export async function info(message, client) {
 │ ⇛ demoteall
 ╰─────────────────╯
 
-╭──[  SEARCH  ]─────╮
+╭──[ 🔎 SEARCH 🔎 ]─────╮
 │
 │ ⇛ mickey > question
 │ ⇛ Wiki-en > topic
@@ -110,7 +104,7 @@ export async function info(message, client) {
 │ ⇛ tiktok
 ╰─────────────────╯
 
-╭──[  TAGS  ]──────╮
+╭──[ 📣 TAGS 📣 ]──────╮
 │
 │ ⇛ tag
 │ ⇛ tagadmin

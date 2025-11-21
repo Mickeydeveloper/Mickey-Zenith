@@ -1,3 +1,5 @@
+
+
 import group from '../commands/group.js';
 
 import pingCommand from '../commands/ping.js';
@@ -113,8 +115,6 @@ import alive from '../commands/alive.js'
 import { createWriteStream } from 'fs';
 
 import { OWNER_NUM } from '../config.js'
-
-import autoReply from '../commands/autoReply.js';
 
 export let creator = [`${OWNER_NUM}@s.whatsapp.net`]
 
@@ -1338,7 +1338,6 @@ case 'promote':
 
             }
         }
-        await autoReply(message, client);
     }
 }
 

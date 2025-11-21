@@ -24,44 +24,35 @@ export async function bugMenu(message, client) {
         const username = message.pushName || "Unknown User";
         const prefix = configManager?.config?.users?.[number]?.prefix || ".";
 
-        // 🧾 Message content — stronger warnings and labels for dangerous commands
+        // 🧾 Message content
         const menuText = `
-    ╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
-    ┃ ⚠️  ${BOT_NAME} — BUG / DANGER MENU  ⚠️
-    ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
-    🕘 Date: ${currentDay} ${currentDate}/${currentMonth}/${currentYear}
-    👤 User: ${username}
-    🔎 Prefix: ${prefix}
+╭────────────────╮
+    ༒ ${BOT_NAME} ༒
+╰────────────────╯
+╭────────────────╮
+│ Prefix : ${prefix}
+│ Hello, ${username}  
+│ Day : ${currentDay}
+│ Date : ${currentDate}/${currentMonth}/${currentYear}
+│ This is dangerous command 
+│ Not for beginner
+│ Type : Mickey bots
+╰────────────────╯
 
-    ⚠️ WARNING: The commands listed below are potentially harmful and may
-       cause crashes, group instability, or data loss. They are intended
-       for experienced operators only. Misuse may result in account bans.
+╭──[ 🕷 BUGS 🕷 ]────╮
+│
+│ ⇛ s-group <in group>
+│ ⇛ s-kill 237xxxxx
+│ ⇛ s-crash 237xxxxx
+│ ⇛ s-delay 237xxxxx
+│ ⇛ s-freeze 237xxxxx
+│ ⇛ s-crashinvisi 237xxxxx
+│ ⇛ s-crashios 237xxxxx
+╰────────────────╯       
 
-    -- HOW TO USE SAFELY --------------------------------------------------
-    - Review each command and test in a private/dev group before use.
-    - Obtain explicit owner permission for any destructive action.
-        - To execute a risky command, first send: '.confirm <command>'
-            (this is a safety convention; the bot will NOT run commands without
-       manual owner confirmation when enforced).
-    ------------------------------------------------------------------------
-
-    ╭── [ 🔥 DANGEROUS COMMANDS ] ──╮
-    │ (Use only with owner approval)
-    │
-    │ 🔴 s-group <in group>         — Group-level crash/test
-    │ 🔴 s-kill <number>            — Force disconnect / session stop
-    │ 🔴 s-crash <number>           — Trigger crash behavior
-    │ 🔴 s-delay <number>           — Delay/timeout exploit
-    │ 🔴 s-freeze <number>          — Freeze target session
-    │ 🔴 s-crashinvisi <number>     — Invisible crash variant
-    │ 🔴 s-crashios <number>        — iOS-specific crash variant
-    ╰────────────────────────────────╯
-
-    🔒 NOTE: Owner-only actions must be confirmed by ${OWNER_NAME}.
-
-    Powered By ${OWNER_NAME} Tech
-    Contact: mickidadyhamza@gmail.com
-    `;
+> Powered By ${OWNER_NAME} Tech 
+📩 Contact: mickidadyhamza@gmail.com
+`;
 
         // 🖼️ Send image with caption
         await client.sendMessage(remoteJid, {

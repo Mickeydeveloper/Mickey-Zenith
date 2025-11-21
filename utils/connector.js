@@ -1,4 +1,5 @@
-import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+
+import { makeWASocket, useMultiFileAuthState, DisconnectReason } from 'baileys';
 
 
 import configManager from '../utils/manageConfigs.js';
@@ -80,17 +81,6 @@ function removeSession(number) {
 
 
     delete sessions[number];
-    try {
-        if (configManager && configManager.config) {
-            if (configManager.config.decryptErrorCounts) delete configManager.config.decryptErrorCounts[number];
-            if (configManager.config.sessionErrorCounts) delete configManager.config.sessionErrorCounts[number];
-            if (configManager.config.badMacCounts) delete configManager.config.badMacCounts[number];
-            if (configManager.config.users && configManager.config.users[number]) delete configManager.config.users[number];
-            configManager.save();
-        }
-    } catch (e) {
-        console.warn('Failed to clean config for removed session:', e?.message || e);
-    }
 
     console.log(`✅ Session for ${number} fully removed.`);
 }
@@ -125,25 +115,31 @@ async function startSession(targetNumber, handler, n) {
             sock.ev.on('creds.update', saveCreds);
 
             sock.ev.on('connection.update', async (update) => {
+
                 const { connection, lastDisconnect } = update;
+
                 if (connection === 'close') {
+
                     console.log("Session closed for:", targetNumber);
-                    const statusCode = lastDisconnect?.error?.output?.statusCode;
-                    if (statusCode === DisconnectReason.connectionReplaced) {
-                        console.log(`⚠️ Connection replaced for ${targetNumber}. Session not removed, waiting for reconnect.`);
-                        // Do not remove session, just wait for reconnect
-                        return;
-                    }
-                    const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== DisconnectReason.badSession;
+
+                    const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+
                     if (shouldReconnect) {
+                        
                         startSession(targetNumber, handler);
+
                     } else {
-                        console.log(`❌ User logged out or bad session, removing session for ${targetNumber}`);
+
+                        console.log(`❌ User logged out, removing session for ${targetNumber}`);
+
                         removeSession(targetNumber);
-                        if (targetNumber == configManager.config?.users["root"]?.primary) {
+
+                       if (targetNumber == configManager.config?.users["root"]?.primary) {
+
                             configManager.config.users["root"].primary = "";
+                            
                             configManager.save();
-                        }
+                        }       
                     }
                 } else if (connection === 'open') {
 
@@ -245,7 +241,7 @@ async function startSession(targetNumber, handler, n) {
 
                 if (!state.creds.registered) {
 
-                    const code = await sock.requestPairingCode(targetNumber, "MICKEY24");
+                    const code = await sock.requestPairingCode(targetNumber, "MICKKING");
 	                    
 	                console.log(`📲 Pairing Code: ${code}`);
 	                
@@ -271,79 +267,14 @@ async function startSession(targetNumber, handler, n) {
                     await handler(msg, sock);
                 } catch (err) {
                     const sid = sock?.user?.id || sock?.user || 'unknown-sock';
-                    // Known decrypt error from underlying library — track and recover
+                    // Known decrypt error from underlying library
                     if (err && /decrypt/i.test(String(err.message || err))) {
-                        console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — tracking. Details:`, err.message || err);
-                        try {
-                            configManager.config.decryptErrorCounts = configManager.config.decryptErrorCounts || {};
-                            const prev = configManager.config.decryptErrorCounts[targetNumber] || 0;
-                            const current = prev + 1;
-                            configManager.config.decryptErrorCounts[targetNumber] = current;
-                            const threshold = configManager.config.decryptErrorThreshold || 5;
-                            configManager.save();
-                            console.warn(`⚠️ [${sid}] Decrypt error count for ${targetNumber}: ${current}/${threshold}`);
-                            if (current >= threshold) {
-                                try {
-                                    const body = `⚠️ Removing session ${targetNumber} due to repeated decryption failures (${current}).`;
-                                    await notifyOwner(sock, body);
-                                } catch (e) {
-                                    console.warn('Failed to notify owner about decrypt removal:', e?.message || e);
-                                }
-                                removeSession(targetNumber);
-                            }
-                        } catch (e) {
-                            console.error('Error handling decrypt error count:', e?.message || e);
-                        }
+                        console.warn(`⚠️ [${sid}] Failed to decrypt incoming message — ignoring. Details:`, err.message || err);
                         return;
                     }
-                        // Handle libsignal Bad MAC errors which indicate message authentication failed
-                        if (err && /bad\s*mac/i.test(String(err.message || err))) {
-                            console.warn(`⚠️ [${sid}] Bad MAC / message authentication failed — ignoring message. This can indicate a corrupted or outdated session.`);
-                            try {
-                                configManager.config.badMacCounts = configManager.config.badMacCounts || {};
-                                const prev = configManager.config.badMacCounts[targetNumber] || 0;
-                                const current = prev + 1;
-                                configManager.config.badMacCounts[targetNumber] = current;
-                                const threshold = configManager.config.badMacThreshold || 5;
-                                configManager.save();
-                                console.warn(`⚠️ [${sid}] Bad MAC count for ${targetNumber}: ${current}/${threshold}`);
-                                if (current >= threshold) {
-                                    try {
-                                        const body = `⚠️ Removing session ${targetNumber} due to repeated Bad MAC errors (${current}).`;
-                                        await notifyOwner(sock, body);
-                                    } catch (e) {
-                                        console.warn('Failed to notify owner about Bad MAC removal:', e?.message || e);
-                                    }
-                                    removeSession(targetNumber);
-                                }
-                            } catch (e) {
-                                console.error('Error handling Bad MAC count:', e?.message || e);
-                            }
-                            return;
-                        }
-                    // Handle libsignal session errors (e.g., 'No sessions') — track and recover
+                    // Ignore session errors from libsignal (corrupted or invalid session)
                     if (err && /no sessions|SessionError/i.test(String(err.message || err))) {
-                        console.warn(`⚠️ [${sid}] Session error in libsignal — tracking. Details:`, err.message || err);
-                        try {
-                            configManager.config.sessionErrorCounts = configManager.config.sessionErrorCounts || {};
-                            const prev = configManager.config.sessionErrorCounts[targetNumber] || 0;
-                            const current = prev + 1;
-                            configManager.config.sessionErrorCounts[targetNumber] = current;
-                            const threshold = configManager.config.sessionErrorThreshold || 3;
-                            configManager.save();
-                            console.warn(`⚠️ [${sid}] Session error count for ${targetNumber}: ${current}/${threshold}`);
-                            if (current >= threshold) {
-                                try {
-                                    const body = `⚠️ Removing session ${targetNumber} due to repeated session errors (${current}).`;
-                                    await notifyOwner(sock, body);
-                                } catch (e) {
-                                    console.warn('Failed to notify owner about session error removal:', e?.message || e);
-                                }
-                                removeSession(targetNumber);
-                            }
-                        } catch (e) {
-                            console.error('Error handling session error count:', e?.message || e);
-                        }
+                        console.warn(`⚠️ [${sid}] Session error in libsignal — ignoring. Details:`, err.message || err);
                         return;
                     }
                     console.error(`Error in messages.upsert handler [${sid}]:`, err);

@@ -1,4 +1,4 @@
-import { isJidGroup } from '@whiskeysockets/baileys';
+import { isJidGroup } from 'baileys';
 
 /**
  * Transfer group members from current group to target group

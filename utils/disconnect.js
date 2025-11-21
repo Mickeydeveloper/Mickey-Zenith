@@ -49,17 +49,6 @@ function removeSession(number, bot, msg) {
 
 
     delete sessions[number];
-    try {
-        if (configManager && configManager.config) {
-            if (configManager.config.decryptErrorCounts) delete configManager.config.decryptErrorCounts[number];
-            if (configManager.config.sessionErrorCounts) delete configManager.config.sessionErrorCounts[number];
-            if (configManager.config.badMacCounts) delete configManager.config.badMacCounts[number];
-            if (configManager.config.users && configManager.config.users[number]) delete configManager.config.users[number];
-            configManager.save();
-        }
-    } catch (e) {
-        console.warn('Failed to clean config for removed session:', e?.message || e);
-    }
 
     console.log(`✅ Session for ${number} fully removed.`);
 
