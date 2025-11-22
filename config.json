@@ -35,9 +35,8 @@
     }
   }
   ,
-  "facebookApis": ["https://api.vreden.my.id/api/v1/download/facebook?url"],
   "notifyOnConnect": true,
   "messages": {
-    "connectionSuccess": "✅ Thanks are connected  successfully in Mickey server* at {time}."
+    "connectionSuccess": "✅ Thanks are connected  successfully in *Mickey server* at {time}."
   }
 }
