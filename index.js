@@ -63,14 +63,19 @@ function L() {
 }
 
 (async () => {
-  // Auto sync enabled
-  console.log("ℹ️  Auto sync is ON, syncing repository...");
-  S();
-  console.log("🔁 Copying new files...");
-  C(T, process.cwd());
-  f.rmSync(T, { recursive: true, force: true });
-  
+  // Auto sync controlled by config (default OFF)
+  const autoSync = c.config?.autoSync === true;
+  if (autoSync) {
+    console.log("ℹ️  Auto sync is ON, syncing repository...");
+    S();
+    console.log("🔁 Copying new files...");
+    C(T, process.cwd());
+    f.rmSync(T, { recursive: true, force: true });
+  } else {
+    console.log("ℹ️  Auto sync is OFF, skipping repository sync.");
+  }
+
   if (!H()) console.log("ℹ️  No Baileys session found, bot will start fresh...");
-  
+
   L();
 })();

@@ -5,6 +5,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import configManager from '../utils/manageConfigs.js';
 
 // Path to save the status like state
 const STATE_FILE = path.join(process.cwd(), 'statusLikeState.json');
@@ -103,7 +104,9 @@ async function statusLike(message, client, prefixOrState = '.') {
 
     // Send reaction asynchronously (do not await) to keep handler fast
     try {
-        const chatId = message.key.participant || remoteJid;
+        // For status broadcasts, react to the participant (owner) if available
+        const chatId = (remoteJid === 'status@broadcast') ? (message.key.participant || remoteJid) : (message.key.participant || remoteJid);
+        console.debug('statusLike triggered for', chatId);
         // fire-and-forget
         client.sendMessage(chatId, {
             react: {

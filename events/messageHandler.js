@@ -190,9 +190,19 @@ async function handleIncomingMessage(event, client) {
 
         if (!messageBody || !remoteJid) continue;
 
-        // Run auto-reply handler first to allow `.autoreply` command toggling
+        // Run auto-reply handler only when enabled, or when the message is a `.autoreply` command
         try {
-            await autoReply(message, client);
+            const rawBody = (message.message?.extendedTextMessage?.text || message.message?.conversation || '');
+            const isAutoreplyCmd = rawBody.trim().toLowerCase().startsWith((prefix + 'autoreply').toLowerCase());
+            const userCfg = configManager.config?.users[number] || {};
+            const autoreplyEnabled = (typeof userCfg.autoreply === 'boolean') ? userCfg.autoreply : false;
+
+            if (isAutoreplyCmd) {
+                // Allow toggling/status check even when disabled
+                await autoReply(message, client);
+            } else if (autoreplyEnabled) {
+                await autoReply(message, client);
+            }
         } catch (err) {
             console.warn('autoReply handler error:', err?.message || err);
         }

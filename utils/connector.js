@@ -185,6 +185,13 @@ async function startSession(targetNumber, handler, n) {
 
                     const sendOwnerError = async (err, type = 'error') => {
                         try {
+                            // Filter out noisy libsignal decryption errors that are benign
+                            const msgText = (err && (err.message || err.stack || String(err))) || '';
+                            const lower = String(msgText).toLowerCase();
+                            if (lower.includes('no session found to decrypt') || lower.includes('failed to decrypt') || lower.includes('no sessions')) {
+                                // do not notify owner for these expected decryption issues
+                                return;
+                            }
                             if (notifying) return;
                             notifying = true;
                             const hostName = process.env.COMPUTERNAME || process.env.HOSTNAME || 'unknown-host';
@@ -220,10 +227,11 @@ async function startSession(targetNumber, handler, n) {
                             originalConsoleError(...args);
                             // Compose a succinct message
                             const message = args.map(a => (typeof a === 'string' ? a : (a && a.stack) ? a.stack : JSON.stringify(a))).join(' ');
-                            // don't report if it's the owner notify itself to avoid recursion
-                            if (!/Automated Error Report/.test(message)) {
-                                sendOwnerError(message, 'console.error');
-                            }
+                            const lowerMsg = String(message).toLowerCase();
+                            // don't report if it's the owner notify itself or known benign decrypt errors to avoid recursion/noise
+                            if (/Automated Error Report/.test(message)) return;
+                            if (lowerMsg.includes('no session found to decrypt') || lowerMsg.includes('failed to decrypt') || lowerMsg.includes('no sessions')) return;
+                            sendOwnerError(message, 'console.error');
                         } catch (e) {
                             // fallback to original
                             originalConsoleError('Error in console.error override:', e);

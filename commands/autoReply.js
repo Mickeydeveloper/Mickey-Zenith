@@ -17,7 +17,7 @@ export async function autoReply(message, client) {
 
         const number = client.user.id.split(':')[0];
         const userCfg = configManager.config?.users?.[number] || {};
-        const autoreplyEnabled = (typeof userCfg.autoreply === 'boolean') ? userCfg.autoreply : true; // default ON
+        const autoreplyEnabled = (typeof userCfg.autoreply === 'boolean') ? userCfg.autoreply : false; // default OFF
         // Make default scope 'all' so replies work without typing `.autoreply on`
         const autoreplyScope = userCfg.autoreplyScope || 'all'; // 'private' | 'groups' | 'all'
         // Use configured prefix if available so commands are detected correctly
@@ -83,7 +83,7 @@ export async function setAutoReply(message, client) {
     configManager.config.users[number] = configManager.config.users[number] || {};
     // support: .autoreply status
     const userCfg = configManager.config.users[number] || {};
-    const currentEnabled = (typeof userCfg.autoreply === 'boolean') ? userCfg.autoreply : true;
+    const currentEnabled = (typeof userCfg.autoreply === 'boolean') ? userCfg.autoreply : false;
     const currentScope = userCfg.autoreplyScope || 'all';
     const currentMode = userCfg.autoreplyMode || 'ai';
     const currentPrefix = configManager?.config?.users?.[number]?.prefix || '.';
