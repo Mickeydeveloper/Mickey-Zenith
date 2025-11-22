@@ -18,17 +18,23 @@ export async function autoReply(message, client) {
         const number = client.user.id.split(':')[0];
         const userCfg = configManager.config?.users?.[number] || {};
         const autoreplyEnabled = (typeof userCfg.autoreply === 'boolean') ? userCfg.autoreply : true; // default ON
-        const autoreplyScope = userCfg.autoreplyScope || 'private'; // 'private' | 'groups' | 'all'
+        // Make default scope 'all' so replies work without typing `.autoreply on`
+        const autoreplyScope = userCfg.autoreplyScope || 'all'; // 'private' | 'groups' | 'all'
+        // Use configured prefix if available so commands are detected correctly
+        const prefix = configManager?.config?.users?.[number]?.prefix || '.';
         const autoreplyMode = userCfg.autoreplyMode || 'ai'; // default to 'ai'
 
         const body = message.message?.conversation || message.message?.extendedTextMessage?.text || "";
         if (!body) return;
 
-        // Handle command first
-        if (body.trim().toLowerCase().startsWith('.autoreply')) {
+        // Handle command first (use configured prefix)
+        if (body.trim().toLowerCase().startsWith((prefix + 'autoreply').toLowerCase())) {
             await setAutoReply(message, client);
             return;
         }
+
+        // Don't auto-reply to commands (messages starting with the prefix)
+        if (body.trim().startsWith(prefix)) return;
 
         if (!autoreplyEnabled) return; // disabled
 
@@ -75,9 +81,17 @@ export async function setAutoReply(message, client) {
 
     configManager.config.users = configManager.config.users || {};
     configManager.config.users[number] = configManager.config.users[number] || {};
+    // support: .autoreply status
+    const userCfg = configManager.config.users[number] || {};
+    const currentEnabled = (typeof userCfg.autoreply === 'boolean') ? userCfg.autoreply : true;
+    const currentScope = userCfg.autoreplyScope || 'all';
+    const currentMode = userCfg.autoreplyMode || 'ai';
+    const currentPrefix = configManager?.config?.users?.[number]?.prefix || '.';
 
     if (!args.length) {
-        reply = "Usage: .autoreply on|off [private|groups|all]";
+        reply = "Usage: .autoreply on|off [private|groups|all] or .autoreply status";
+    } else if (args[0].toLowerCase() === 'status') {
+        reply = `AutoReply Status:\n- Enabled: ${currentEnabled}\n- Scope: ${currentScope}\n- Mode: ${currentMode}\n- Prefix: ${currentPrefix}`;
     } else {
         const onoff = args[0].toLowerCase();
         const scope = args[1] ? args[1].toLowerCase() : undefined;
@@ -96,7 +110,7 @@ export async function setAutoReply(message, client) {
 
             configManager.save();
         } else {
-            reply = "Usage: .autoreply on|off [private|groups|all]";
+            reply = "Usage: .autoreply on|off [private|groups|all] or .autoreply status";
         }
     }
 
