@@ -52,44 +52,53 @@ export async function facebook(message, client) {
 
     // Fallback: fetch the page HTML and try to extract known fields
     if (!videoUrl) {
-      const page = await axios.get(url, { timeout: 15000, headers: { 'User-Agent': 'Mozilla/5.0' } });
-      const html = String(page.data || '');
+      // Follow redirects and get final HTML
+      const page = await axios.get(url, { timeout: 20000, headers: { 'User-Agent': 'Mozilla/5.0' }, maxRedirects: 5 });
+      let html = String(page.data || '');
 
-      // og:video
+      // Helper: attempt to extract first URL after a key
+      const extractUrlAfterKey = (key, ctxLen = 1200) => {
+        const idx = html.indexOf(key);
+        if (idx === -1) return null;
+        const snippet = html.slice(idx, idx + ctxLen);
+        const m = snippet.match(/https?:\/\/[^\"'\s<>]+/i);
+        if (!m) return null;
+        return m[0].replace(/\\u0025/g, '%').replace(/\\\//g, '/');
+      };
+
+      // 1) Try og:video meta tag
       const og = html.match(/<meta[^>]+property=["']og:video["'][^>]+content=["']([^"']+)["']/i);
       if (og && og[1]) videoUrl = og[1];
 
-      // playable_url (loose substring + url match)
+      // 2) Try multiple known JSON keys used by Facebook pages
+      const keysToTry = ['playable_url', 'playable_url_quality_hd', 'playable_url_quality_sd', 'hd_src_no_ratelimit', 'hd_src', 'sd_src_no_ratelimit', 'sd_src', 'playable_url_with_sound', 'video_url'];
+      for (const k of keysToTry) {
+        if (videoUrl) break;
+        const found = extractUrlAfterKey(k);
+        if (found) videoUrl = found;
+      }
+
+      // 3) Some pages include JSON blobs with escaped slashes; attempt unescaping and search
       if (!videoUrl) {
-        const idx = html.indexOf('playable_url');
-        if (idx !== -1) {
-          const snippet = html.slice(idx, idx + 1000);
-          const m = snippet.match(/https?:\/\/[^"'\s<>]+/i);
-          if (m) videoUrl = m[0].replace(/\\u0025/g, '%').replace(/\\\//g, '/');
+        const unescaped = html.replace(/\\\\/g, '\\').replace(/\\u0025/g, '%').replace(/\\\//g, '/');
+        for (const k of keysToTry) {
+          if (videoUrl) break;
+          const idx2 = unescaped.indexOf(k);
+          if (idx2 === -1) continue;
+          const snippet = unescaped.slice(idx2, idx2 + 1200);
+          const m2 = snippet.match(/https?:\/\/[^\"'\s<>]+/i);
+          if (m2) videoUrl = m2[0];
         }
       }
 
-      // hd_src or sd_src (loose search then url match)
+      // 4) As last resort, search for any mp4 urls in the HTML
       if (!videoUrl) {
-        const hdIdx = html.indexOf('hd_src');
-        if (hdIdx !== -1) {
-          const snippet = html.slice(hdIdx, hdIdx + 600);
-          const m = snippet.match(/https?:\/\/[^"'\s<>]+/i);
-          if (m) videoUrl = m[0].replace(/\\\//g, '/');
-        }
-      }
-
-      if (!videoUrl) {
-        const sdIdx = html.indexOf('sd_src');
-        if (sdIdx !== -1) {
-          const snippet = html.slice(sdIdx, sdIdx + 600);
-          const m = snippet.match(/https?:\/\/[^"'\s<>]+/i);
-          if (m) videoUrl = m[0].replace(/\\\//g, '/');
-        }
+        const any = html.match(/https?:\/\/[^\"'\s<>]+\.mp4(?:\?[^\"'\s<>]*)?/i);
+        if (any) videoUrl = any[0].replace(/\\\//g, '/');
       }
     }
 
-    if (!videoUrl) throw new Error('Could not extract Facebook video URL. Add a working API to config.json under "facebookApis" or provide a different link.');
+    if (!videoUrl) throw new Error('Could not extract Facebook video URL. The video may be private or require authentication, or the page format is unsupported.');
 
     await client.sendMessage(remoteJid, { video: { url: videoUrl }, mimetype: 'video/mp4', caption: `${videoDesc}\n\n> 🎬 Downloaded by Mickey Zenith:`, quoted: message });
     console.log('✅ Facebook video sent.');
