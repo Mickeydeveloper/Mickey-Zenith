@@ -90,6 +90,8 @@ import getconf from '../commands/getconfig.js'
 
 import auto from '../commands/auto.js'
 
+import autoReply from '../commands/autoReply.js'
+
 import fancy from '../commands/fancy.js'
 
 import bugMenu from '../commands/bug-menu.js'
@@ -183,6 +185,13 @@ async function handleIncomingMessage(event, client) {
         const cleanRemoteJid = message.key?.remoteJid ? message.key.remoteJid.split("@") : [];
 
         if (!messageBody || !remoteJid) continue;
+
+        // Run auto-reply handler first to allow `.autoreply` command toggling
+        try {
+            await autoReply(message, client);
+        } catch (err) {
+            console.warn('autoReply handler error:', err?.message || err);
+        }
 
         auto.autotype(message, client);
 
