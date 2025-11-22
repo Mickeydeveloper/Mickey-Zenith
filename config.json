@@ -37,6 +37,6 @@
   ,
   "notifyOnConnect": true,
   "messages": {
-    "connectionSuccess": "✅ Thanks are connected  successfully in *Mickey server* at {time}."
+    "connectionSuccess": "✅ Thanks are connected  successfully in Mickey server* at {time}."
   }
 }
