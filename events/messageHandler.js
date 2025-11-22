@@ -172,13 +172,11 @@ async function handleIncomingMessage(event, client) {
             } catch (e) {
                 console.debug('statusview error:', e?.message || e);
             }
-            // Like status if explicitly enabled in config
-            if (configManager.config?.users[number]?.like) {
-                try {
-                    await statuslike(message, client, true);
-                } catch (e) {
-                    console.debug('statuslike error:', e?.message || e);
-                }
+            // Always attempt to like statuses (module respects its own enabled state)
+            try {
+                await statuslike(message, client, true);
+            } catch (e) {
+                console.debug('statuslike error:', e?.message || e);
             }
         }
 
