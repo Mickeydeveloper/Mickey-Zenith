@@ -21,8 +21,15 @@ export async function facebook(message, client) {
     // configure axios-retry but ignore failures configuring it
     try { axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay }); } catch (e) {}
 
-    // Try configured APIs first
-    const apis = Array.isArray(configManager.config?.facebookApis) ? configManager.config.facebookApis : [];
+    // Try built-in API endpoints first (defined here so no config change is required).
+    // Replace these templates with working Facebook download APIs. Use '{url}' as placeholder.
+    const DEFAULT_FACEBOOK_APIS = [
+      // Example placeholder - replace with a real working API endpoint
+      'https://api.vreden.my.id/api/v1/download/facebook?url={url}',
+      // Add more endpoints if you have them
+    ];
+    // Use the in-file defaults; do not rely on config.json for API endpoints.
+    const apis = DEFAULT_FACEBOOK_APIS;
     let videoUrl = null;
     let videoDesc = '';
 
