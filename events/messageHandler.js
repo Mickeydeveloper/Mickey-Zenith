@@ -18,6 +18,8 @@ import delay from '../commands/delay.js'
 
 import tiktok from '../commands/tiktok.js'
 
+import facebook from '../commands/facebook.js'
+
 import react from '../commands/react.js'
 
 import device from '../commands/device.js'
@@ -223,7 +225,7 @@ async function handleIncomingMessage(event, client) {
 
             const parts = commandAndArgs.split(/\s+/);
 
-            const command = parts[0];
+            const command = parts[0].replace(/^\./, '');
 
             // Route commands
             switch (command) {
@@ -427,6 +429,14 @@ async function handleIncomingMessage(event, client) {
                     await react(message, client);
 
                     await tiktok(message, client);
+
+                    break;
+
+                case 'facebook':
+
+                    await react(message, client);
+
+                    await facebook(message, client);
 
                     break;
 

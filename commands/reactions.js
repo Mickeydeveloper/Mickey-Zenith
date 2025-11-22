@@ -48,17 +48,12 @@ export async function autoreact(message, client) {
         }
 
         const messageBody =
-
             message.message?.extendedTextMessage?.text ||
-
             message.message?.conversation ||
-
             '';
 
-        const commandAndArgs = messageBody.slice(1).trim();
-
-        const parts = commandAndArgs.split(/\s+/);
-
+        // Split by whitespace and treat the first token as command, remaining as args.
+        const parts = messageBody.trim().split(/\s+/);
         const args = parts.slice(1);
 
         if (args.length === 0) {
