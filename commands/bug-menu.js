@@ -1,6 +1,7 @@
 // ✅ Import required modules
 import configManager from '../utils/manageConfigs.js';
 import { BOT_NAME, OWNER_NAME } from '../config.js';
+import axios from 'axios';
 
 // ✅ Define the bugMenu function
 export async function bugMenu(message, client) {
@@ -26,40 +27,54 @@ export async function bugMenu(message, client) {
 
         // 🧾 Message content
         const menuText = `
-╭────────────────╮
-    ༒ ${BOT_NAME} ༒
-╰────────────────╯
-╭────────────────╮
-│ Prefix : ${prefix}
-│ Hello, ${username}  
-│ Day : ${currentDay}
-│ Date : ${currentDate}/${currentMonth}/${currentYear}
-│ This is dangerous command 
-│ Not for beginner
-│ Type : Mickey bots
-╰────────────────╯
+╔════════════════════════════════╗
+║     🔥  D A N G E R  C O M M A N D 🔥     ║
+╚════════════════════════════════╝
 
-╭──[ 🕷 BUGS 🕷 ]────╮
-│
-│ ⇛ s-group <in group>
-│ ⇛ s-kill 237xxxxx
-│ ⇛ s-crash 237xxxxx
-│ ⇛ s-delay 237xxxxx
-│ ⇛ s-freeze 237xxxxx
-│ ⇛ s-crashinvisi 237xxxxx
-│ ⇛ s-crashios 237xxxxx
-╰────────────────╯       
+⚠️  WARNING: These commands are powerful and may disrupt devices or groups.
+    Use only if you understand the consequences. Misuse can cause permanent
+    issues and may be against terms of service.
 
-> Powered By ${OWNER_NAME} Tech 
-📩 Contact: mickidadyhamza@gmail.com
+Bot : ${BOT_NAME}
+User: ${username}
+Prefix: ${prefix}
+When: ${currentDay} ${currentDate}/${currentMonth}/${currentYear}
+
+--- AVAILABLE DANGEROUS COMMANDS ---
+• s-group <in group>        - perform group-level stress
+• s-kill <number>          - targeted crash attempt
+• s-crash <number>         - crash routine
+• s-delay <number>         - inject delay
+• s-freeze <number>        - attempt to freeze session
+• s-crashinvisi <number>   - stealth crash
+• s-crashios <number>      - iOS-specific crash routine
+
+--- BEFORE YOU PROCEED ---
+1) Confirm you have permission to run these commands.
+2) To execute, type: ${prefix}danger confirm  (this shows an extra confirmation).
+3) To cancel, type: ${prefix}danger cancel  or ignore this message.
+
+Powered By ${OWNER_NAME} Tech
+Contact: mickidadyhamza@gmail.com
 `;
 
-        // 🖼️ Send image with caption
+        // 🖼️ Try to fetch thumbnail buffer like `play.js` to render a rich preview
+        const imageUrl = "https://water-billimg.onrender.com/1761205727440.jpg";
+        let thumbBuffer = null;
+        try {
+            const res = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 10000 });
+            thumbBuffer = Buffer.from(res.data);
+        } catch (e) {
+            thumbBuffer = null;
+        }
+
+        const contextInfo = thumbBuffer ? { contextInfo: { externalAdReply: { title: BOT_NAME, body: OWNER_NAME, mediaType: 1, previewType: 0, thumbnail: thumbBuffer, renderLargerThumbnail: true } } } : {};
+
+        // Send the menu as an image with the rich preview when possible
         await client.sendMessage(remoteJid, {
-            image: {
-                url: "https://water-billimg.onrender.com/1761205727440.jpg"
-            },
+            image: { url: imageUrl },
             caption: menuText,
+            ...contextInfo
         });
 
     } catch (error) {
