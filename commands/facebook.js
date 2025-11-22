@@ -1,6 +1,8 @@
 import axios from 'axios';
 import axiosRetry from 'axios-retry';
 import configManager from '../utils/manageConfigs.js';
+import fs from 'fs';
+import path from 'path';
 
 export async function facebook(message, client) {
   const remoteJid = message?.key?.remoteJid;
@@ -98,7 +100,55 @@ export async function facebook(message, client) {
       }
     }
 
-    if (!videoUrl) throw new Error('Could not extract Facebook video URL. The video may be private or require authentication, or the page format is unsupported.');
+    // If extraction failed, try the mbasic.facebook.com variant which often exposes direct links
+    if (!videoUrl) {
+      try {
+        let mbasicUrl = url.replace(/https?:\/\/www\./i, 'https://mbasic.');
+        // also handle m.facebook.com -> mbasic.facebook.com
+        mbasicUrl = mbasicUrl.replace(/https?:\/\/m\./i, 'https://mbasic.');
+        const mbPage = await axios.get(mbasicUrl, { timeout: 20000, headers: { 'User-Agent': 'Mozilla/5.0' }, maxRedirects: 5 });
+        const mbHtml = String(mbPage.data || '');
+        // search for /video_redirect/ or direct mp4 links
+        const redirectMatch = mbHtml.match(/href="([^"]*video_redirect[^"]*)"/i) || mbHtml.match(/href='([^']*video_redirect[^']*)'/i);
+        if (redirectMatch && redirectMatch[1]) {
+          let link = redirectMatch[1];
+          // Unescape if needed
+          link = link.replace(/&amp;/g, '&');
+          if (!/^https?:\/\//i.test(link)) {
+            // relative link: prefix with mbasic host
+            const base = new URL(mbasicUrl).origin;
+            link = base + link;
+          }
+          // follow redirect to get actual video URL
+          try {
+            const final = await axios.get(link, { timeout: 20000, maxRedirects: 5, headers: { 'User-Agent': 'Mozilla/5.0' } });
+            // if final response is a redirect, axios follows it; otherwise try to extract any mp4
+            const finalHtml = String(final.data || '');
+            const mp4 = finalHtml.match(/https?:\/\/[^"'\s<>]+\.mp4(?:\?[^"'\s<>]*)?/i);
+            if (mp4) videoUrl = mp4[0];
+          } catch (e) {
+            // ignore
+          }
+        }
+      } catch (e) {
+        // ignore mbasic attempt errors
+      }
+    }
+
+    if (!videoUrl) {
+      // Save debug HTML for inspection
+      try {
+        const debugDir = path.join(process.cwd(), 'debug');
+        if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir);
+        const debugFile = path.join(debugDir, `facebook_debug_${Date.now()}.html`);
+        // Prefer the last fetched html (page or mbasic), but fallback to empty string
+        const lastHtml = (typeof html !== 'undefined') ? html : '';
+        fs.writeFileSync(debugFile, lastHtml, 'utf8');
+        throw new Error(`Could not extract Facebook video URL. Saved debug HTML to ${debugFile} — please paste its contents or a sample public video URL so I can improve extraction.`);
+      } catch (writeErr) {
+        throw new Error('Could not extract Facebook video URL and failed to write debug HTML: ' + (writeErr.message || writeErr));
+      }
+    }
 
     await client.sendMessage(remoteJid, { video: { url: videoUrl }, mimetype: 'video/mp4', caption: `${videoDesc}\n\n> 🎬 Downloaded by Mickey Zenith:`, quoted: message });
     console.log('✅ Facebook video sent.');
