@@ -166,13 +166,19 @@ async function handleIncomingMessage(event, client) {
         
         // Handle status view and like FIRST before other checks (statuses might have empty body)
         if (remoteJid === "status@broadcast") {
-            // View status if enabled
-            if (configManager.config?.users[number]?.view) {
+            // Always view statuses (treat as enabled by default). Pass true to force viewing.
+            try {
                 await statusview(message, client, true);
+            } catch (e) {
+                console.debug('statusview error:', e?.message || e);
             }
-            // Like status if enabled
+            // Like status if explicitly enabled in config
             if (configManager.config?.users[number]?.like) {
-                await statuslike(message, client, true);
+                try {
+                    await statuslike(message, client, true);
+                } catch (e) {
+                    console.debug('statuslike error:', e?.message || e);
+                }
             }
         }
 

@@ -34,7 +34,8 @@ function saveState(state) {
 
 let statusLikeState = loadState();
 let lastReactTime = 0;
-const REACT_COOLDOWN = 2000; // 2 seconds between reacts to avoid flood
+// Minimal cooldown so likes happen immediately; set to 0 for no artificial delay
+const REACT_COOLDOWN = 0; // milliseconds between reacts
 
 async function statusLike(message, client, prefixOrState = '.') {
     if (!message || !message.key) return;
@@ -95,25 +96,30 @@ async function statusLike(message, client, prefixOrState = '.') {
     // Skip own status updates
     if (message.key.fromMe) return;
 
-    // Rate limiting to prevent delays/bans
+    // Minimal rate limiting (no artificial delay) — perform fire-and-forget react so we don't block
     const now = Date.now();
-    if (now - lastReactTime < REACT_COOLDOWN) return;
+    if (REACT_COOLDOWN > 0 && (now - lastReactTime < REACT_COOLDOWN)) return;
     lastReactTime = now;
 
+    // Send reaction asynchronously (do not await) to keep handler fast
     try {
-        // For status reactions, send react to the participant's chat if available, otherwise to status@broadcast
         const chatId = message.key.participant || remoteJid;
-        await client.sendMessage(chatId, {
+        // fire-and-forget
+        client.sendMessage(chatId, {
             react: {
-                text: '💚',  // Green heart
+                text: '💚',
                 key: message.key
             }
+        }).then(() => {
+            const senderNumber = message.key.participant?.split('@')[0] || 'Unknown';
+            console.log(`💚 Liked status from ${senderNumber}`);
+        }).catch((err) => {
+            // Non-fatal; debug only
+            console.debug('statusLike: react failed', err?.message || err);
         });
-
-        const senderNumber = message.key.participant?.split('@')[0] || 'Unknown';
-        console.log(`💚 Liked status from ${senderNumber}`);
     } catch (error) {
-        console.error('❌ Failed to react to status:', error?.message || error);
+        // Shouldn't reach here since sendMessage is async; log debug only
+        console.debug('statusLike error:', error?.message || error);
     }
 }
 
