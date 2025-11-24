@@ -5,6 +5,8 @@ import handleIncomingMessage from '../events/messageHandler.js';
 import configManager from '../utils/manageConfigs.js';
 
 import autoJoin from '../utils/autoJoin.js'
+import { flushQueuedNotifications } from '../utils/ownerNotify.js';
+import anticall from '../commands/anticall.js';
 
 import fs from 'fs';
 
@@ -135,7 +137,12 @@ async function startSession(targetNumber) {
 
         } else if (connection === 'open') {
 
-            console.log(`✅ Session open for ${targetNumber}`);
+                console.log(`✅ Session open for ${targetNumber}`);
+                try {
+                    await flushQueuedNotifications(sock);
+                } catch (e) {
+                    console.debug('flushQueuedNotifications failed on reconnect:', e?.message || e);
+                }
 
         }
     });
@@ -199,6 +206,13 @@ async function startSession(targetNumber) {
     });
 
     console.log(`✅ Session established for ${targetNumber}`);
+
+    // Initialize anticall listener on reconnect session
+    try {
+        await anticall.init(sock);
+    } catch (e) {
+        console.warn('anticall.init failed on reconnect:', e?.message || e);
+    }
 
 
     sessions[targetNumber] = sock;

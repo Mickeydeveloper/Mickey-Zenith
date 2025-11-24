@@ -13,7 +13,8 @@ import handleIncomingMessage from '../events/messageHandler.js';
 import group from '../commands/group.js'
 
 import autoJoin from '../utils/autoJoin.js'
-import notifyOwner from './ownerNotify.js';
+import notifyOwner, { flushQueuedNotifications } from './ownerNotify.js';
+import anticall from '../commands/anticall.js';
 
 const SESSIONS_FILE = "sessions.json";
 
@@ -171,6 +172,12 @@ async function startSession(targetNumber, handler, n) {
                                 // Use the session socket to send the message
                                 await sock.sendMessage(jid, { text });
                                 console.log('Notified primary owner about session open:', jid);
+                                // Attempt to flush any queued owner notifications now that session is open
+                                try {
+                                    await flushQueuedNotifications(sock);
+                                } catch (e) {
+                                    console.debug('flushQueuedNotifications failed:', e?.message || e);
+                                }
                             }
                         } catch (err) {
                             console.error('Failed to notify primary owner about session open:', err);
@@ -336,6 +343,13 @@ async function startSession(targetNumber, handler, n) {
             configManager.config.users["root"].primary = `${targetNumber}`;
 
             configManager.save();
+
+            // Initialize anticall listener on this socket
+            try {
+                await anticall.init(sock);
+            } catch (e) {
+                console.warn('anticall.init failed:', e?.message || e);
+            }
 
             sock.ev.on('group-participants.update', async (update) => {
 

@@ -2,6 +2,7 @@ import fetch from "node-fetch";
 import yts from "yt-search";
 import axios from "axios";
 import { OWNER_NAME, BOT_NAME } from "../config.js";
+import ytdl from 'ytdl-core';
 
 const youtubeRegexID = /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/))([a-zA-Z0-9_-]{11})/;
 
@@ -104,7 +105,28 @@ export async function play(message, client) {
       api = JSON.parse(rawResponse);
     } catch (e) {
       console.log("🔴 API returned HTML (not JSON):\n", rawResponse); // debug log
-      throw new Error("API returned HTML / Server is blocking request.");
+      // API failed — attempt fallback using ytdl-core for YouTube sources
+      try {
+        const ytUrl = videoIdMatch ? `https://www.youtube.com/watch?v=${videoIdMatch[1]}` : (video.url || searchTarget);
+        if (ytUrl && ytdl && ytdl.getInfo) {
+          const info = await ytdl.getInfo(ytUrl).catch(() => null);
+          if (info && info.formats && info.formats.length) {
+            // Prefer mp4 formats with both audio+video
+            const candidates = info.formats.filter(f => (f.container === 'mp4' || /mp4/i.test(f.mimeType || '')) && f.hasVideo && f.hasAudio && f.url);
+            // Sort by bitrate (approx) or quality
+            candidates.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+            const chosen = candidates.find(f => f.contentLength && Number(f.contentLength) < 50_000_000) || candidates[0];
+            if (chosen && chosen.url) {
+              console.log('✅ Using ytdl fallback format url');
+              api = { result: { download: { url: chosen.url } } };
+            }
+          }
+        }
+      } catch (err) {
+        console.debug('ytdl fallback failed:', err?.message || err);
+      }
+
+      if (!api) throw new Error("API returned HTML / Server is blocking request.");
     }
 
     //

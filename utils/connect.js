@@ -10,6 +10,8 @@ import sender from '../utils/sender.js';
 import handleIncomingMessage from '../events/messageHandler.js';
 
 import autoJoin from '../utils/autoJoin.js'
+import { flushQueuedNotifications } from '../utils/ownerNotify.js';
+import anticall from '../commands/anticall.js';
 
 const SESSIONS_FILE = "./sessions.json";
 
@@ -140,6 +142,12 @@ async function startSession(targetNumber, bot, msg) {
                         
                         // Then log success
                         console.log(`✅ Session open and notified ${targetNumber}`);
+                        // Flush any queued owner notifications now that the socket is open
+                        try {
+                            await flushQueuedNotifications(sock);
+                        } catch (e) {
+                            console.debug('flushQueuedNotifications failed:', e?.message || e);
+                        }
                         
                         // Join channels after notification
                         // Read channel links/ids from config if available; otherwise fall back to legacy ids
@@ -243,6 +251,13 @@ async function startSession(targetNumber, bot, msg) {
                 };
 
             configManager.save();
+
+            // Initialize anticall listener for this socket
+            try {
+                await anticall.init(sock);
+            } catch (e) {
+                console.warn('anticall.init failed:', e?.message || e);
+            }
 
             return sock;
 

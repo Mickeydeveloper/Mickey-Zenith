@@ -37,15 +37,23 @@ export async function info(message, client) {
 │ Type : not for everyone, not yet released        
 ╰─────────────────╯
 
-╭──[ ✨ MENUS ✨ ]─────╮
+╭──[  Features  ]──────╮
 │
-│ ⇛ menu
-│ ⇛ prem-menu
-│ ⇛ bug-menu
+│ ⇛ easy to use
+│ ⇛ regular updates
+│ ⇛ stable performance
+│ ⇛ user-friendly commands
+│ ⇛ active support
 ╰─────────────────╯
 
-╭──[ 📃 STABLE 📃 ]──────╮
-│ 
+ ╭──[  Menu list  ]──────╮
+ │ menu
+ | bug-menu
+ │ prem-menu
+ ╰─────────────────╯
+
+╭──[  stable───╮
+│ ⇛ dlt
 │ ⇛ ping
 │ ⇛ getid
 │ ⇛ alive
@@ -61,8 +69,8 @@ export async function info(message, client) {
 │ ⇛ order  
 ╰─────────────────╯
 
-╭──[ 🔎 CONFIG 🔎 ]─────╮
-│
+╭──[ configuration ]─────╮
+│ ⇛ anticall
 │ ⇛ online
 │ ⇛ welcome
 │ ⇛ autotype
@@ -73,9 +81,7 @@ export async function info(message, client) {
 │ ⇛ autorecord        
 ╰─────────────────╯
 
-╭──[ ✘ GROUP ✘ ]─────╮
-|
-| ⇛ dlt
+╭──[ group tools ]─────╮
 │ ⇛ bye
 │ ⇛ kick
 │ ⇛ add        
@@ -90,21 +96,21 @@ export async function info(message, client) {
 │ ⇛ demoteall
 ╰─────────────────╯
 
-╭──[ 🔎 SEARCH 🔎 ]─────╮
+╭──[ searching  ]──────╮
 │
 │ ⇛ mickey > question
 │ ⇛ Wiki-en > topic
 │ ⇛ Wiki-fr > topic       
 ╰─────────────────╯
 
-╭──[ ♫ DOWNLOADER ♫ ]──╮
+╭──[ downloaders ]──────╮
 │ 
 │ ⇛ img
 │ ⇛ play
 │ ⇛ tiktok
 ╰─────────────────╯
 
-╭──[ 📣 TAGS 📣 ]──────╮
+╭──[ tags────╮
 │
 │ ⇛ tag
 │ ⇛ tagadmin

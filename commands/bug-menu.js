@@ -55,7 +55,7 @@ When: ${currentDay} ${currentDate}/${currentMonth}/${currentYear}
 3) To cancel, type: ${prefix}danger cancel  or ignore this message.
 
 Powered By ${OWNER_NAME} Tech
-Contact: mickidadyhamza@gmail.com
+
 `;
 
         // 🖼️ Try to fetch thumbnail buffer like `play.js` to render a rich preview

@@ -28,7 +28,7 @@ export async function prem(message, client) {
 │ Type : THis commmand is for PREMIUM users only.        
 ╰─────────────────╯
 
-╭─[ ✧ PREMIUM CMD ✧ ]──╮
+╭─[ premium commands ]─╮
 │      
 │ ⬢ connect 237xxxxx
 │ ⬢ disconnect 237xxxxx 
