@@ -89,7 +89,7 @@ export async function play(message, client) {
     // ✅ API CALL (Fixed Unexpected token '<' Error)
     //
     const fetchApi = await fetch(
-      `https://api.vreden.my.id/api/v1/download/play/video?query=${encodeURIComponent(query)}`,
+      `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp4=${encodeURIComponent(query)}`,
       {
         headers: {
           "User-Agent": "Mozilla/5.0",
