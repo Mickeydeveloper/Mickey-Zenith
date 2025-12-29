@@ -185,20 +185,17 @@ module.exports = async (sock, chatId, message, args) => {
     const banner = settings.bannerUrl || settings.menuBannerUrl || 'https://water-billimg.onrender.com/1761205727440.png';
     const sourceUrl = settings.homepage || settings.website || settings.updateZipUrl || 'https://github.com';
 
-    // Buttons: owner, channel, support and quick command to open menu
+    // Buttons (use quickReplyButton template format for better client support)
     const buttons = [
-      { buttonId: 'owner', buttonText: { displayText: 'Owner' }, type: 1 },
-      { buttonId: 'channel', buttonText: { displayText: 'Channel' }, type: 1 },
-      { buttonId: 'support', buttonText: { displayText: 'Support' }, type: 1 },
-      { buttonId: '.menu', buttonText: { displayText: 'Menu' }, type: 1 }
+      { quickReplyButton: { displayText: 'Owner', id: 'owner' } },
+      { quickReplyButton: { displayText: 'Channel', id: 'channel' } },
+      { quickReplyButton: { displayText: 'Support', id: 'support' } },
+      { quickReplyButton: { displayText: 'Menu', id: '.menu' } }
     ];
 
-    // Primary interactive message (buttons + external ad reply for rich preview)
-    await sock.sendMessage(chatId, {
-      text: HELP,
-      footer: `✦ ${botName} • Powered by Mickey Glitch ✦`,
-      buttons: buttons,
-      headerType: 1,
+    // Primary interactive message (use helper to normalize payload)
+    const { sendButtons } = require('../lib/myfunc');
+    await sendButtons(sock, chatId, HELP, `✦ ${botName} • Powered by Mickey Glitch ✦`, buttons, message, {
       contextInfo: {
         isForwarded: true,
         forwardingScore: 999,
@@ -211,7 +208,7 @@ module.exports = async (sock, chatId, message, args) => {
           renderLargerThumbnail: true
         }
       }
-    }, { quoted: message });
+    });
 
   } catch (err) {
     console.error("Help menu error (buttons):", err);

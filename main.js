@@ -1145,11 +1145,11 @@ async function handleMessages(sock, messageUpdate, printLog) {
                 if (!skipMenu.includes(baseCmd)) {
                     const { sendButtons } = require('./lib/myfunc');
                     const quickButtons = [
-                        { buttonId: '.menu', buttonText: { displayText: 'Menu' } },
-                        { buttonId: '.help', buttonText: { displayText: 'Help' } },
-                        { buttonId: 'owner', buttonText: { displayText: 'Owner' } }
+                        { quickReplyButton: { displayText: 'Menu', id: '.menu' } },
+                        { quickReplyButton: { displayText: 'Help', id: '.help' } },
+                        { quickReplyButton: { displayText: 'Owner', id: 'owner' } }
                     ];
-                    // Best-effort: do not fail if send fails
+                    // Best-effort: send as templateButtons (more reliable on clients)
                     await sendButtons(sock, chatId, 'Quick actions:', `Use these shortcuts after your command`, quickButtons, message);
                 }
             } catch (e) {
