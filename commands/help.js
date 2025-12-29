@@ -179,14 +179,26 @@ Anime Reactions
 /**
  * Send Modern Help Menu with Enhanced Visuals
  */
-module.exports = async (sock, chatId, message) => {
+module.exports = async (sock, chatId, message, args) => {
   try {
     const botName = settings.botName || 'Mickey Glitch';
     const banner = settings.bannerUrl || settings.menuBannerUrl || 'https://water-billimg.onrender.com/1761205727440.png';
     const sourceUrl = settings.homepage || settings.website || settings.updateZipUrl || 'https://github.com';
 
+    // Buttons: owner, channel, support and quick command to open menu
+    const buttons = [
+      { buttonId: 'owner', buttonText: { displayText: 'Owner' }, type: 1 },
+      { buttonId: 'channel', buttonText: { displayText: 'Channel' }, type: 1 },
+      { buttonId: 'support', buttonText: { displayText: 'Support' }, type: 1 },
+      { buttonId: '.menu', buttonText: { displayText: 'Menu' }, type: 1 }
+    ];
+
+    // Primary interactive message (buttons + external ad reply for rich preview)
     await sock.sendMessage(chatId, {
       text: HELP,
+      footer: `✦ ${botName} • Powered by Mickey Glitch ✦`,
+      buttons: buttons,
+      headerType: 1,
       contextInfo: {
         isForwarded: true,
         forwardingScore: 999,
@@ -202,10 +214,30 @@ module.exports = async (sock, chatId, message) => {
     }, { quoted: message });
 
   } catch (err) {
-    console.error("Help menu error:", err);
-    await sock.sendMessage(chatId, { 
-      text: "⚠️ Failed to load help menu. Please try again later." 
-    }, { quoted: message });
+    console.error("Help menu error (buttons):", err);
+    // Fallback: send plain text help if interactive message fails
+    try {
+      await sock.sendMessage(chatId, {
+        text: HELP,
+        contextInfo: {
+          isForwarded: true,
+          forwardingScore: 999,
+          externalAdReply: {
+            title: `✦ ${settings.botName || 'Mickey Glitch'} Premium Menu ✦`,
+            body: 'Explore all powerful commands • 24/7 Uptime',
+            thumbnailUrl: banner,
+            sourceUrl: sourceUrl,
+            mediaType: 1,
+            renderLargerThumbnail: true
+          }
+        }
+      }, { quoted: message });
+    } catch (err2) {
+      console.error("Help menu fallback error:", err2);
+      await sock.sendMessage(chatId, { 
+        text: "⚠️ Failed to load help menu. Please try again later." 
+      }, { quoted: message });
+    }
   }
 };
 
