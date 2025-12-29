@@ -141,12 +141,12 @@ async function halotelCommand(sock, chatId, message, userMessage = '') {
         await new Promise(r => setTimeout(r, 1500));
 
         // === Step 2: Payment Options with Sleek Design ===
-        const waPayLink = `https://wa.me/\( {SELLER_NUMBER}?text= \){encodeURIComponent(
-            `Hello \( {SELLER_NAME},\n\nI want to buy * \){gbAmount} GB* Halotel bundle\n` +
+        const waMessage = `Hello ${SELLER_NAME},\n\nI want to buy *${gbAmount} GB* Halotel bundle\n` +
             `📱 Recipient: ${phoneNumber}\n` +
             `👤 Name: ${customerName || '—'}\n` +
-            `💰 Amount: TSh ${formatNumber(totalPrice)}\n\nPlease process my order. Thank you!`
-        )}`;
+            `💰 Amount: TSh ${formatNumber(totalPrice)}\n\nPlease process my order. Thank you!`;
+
+        const waPayLink = `https://wa.me/${SELLER_NUMBER}?text=${encodeURIComponent(waMessage)}`;
 
         const paymentText = 
 `╭━━━✦ *SECURE PAYMENT* ✦━━━╮
