@@ -1138,6 +1138,24 @@ async function handleMessages(sock, messageUpdate, printLog) {
         if (userMessage.startsWith('.')) {
             // After command is processed successfully
             await addCommandReaction(sock, message);
+            try {
+                // Suggest helpful quick-action buttons after most commands (skip help/menu to avoid duplicates)
+                const skipMenu = ['.help', '.menu', '.bot', '.list', '.cmd', '.commands'];
+                const baseCmd = userMessage.split(' ')[0];
+                if (!skipMenu.includes(baseCmd)) {
+                    const { sendButtons } = require('./lib/myfunc');
+                    const quickButtons = [
+                        { buttonId: '.menu', buttonText: { displayText: 'Menu' } },
+                        { buttonId: '.help', buttonText: { displayText: 'Help' } },
+                        { buttonId: 'owner', buttonText: { displayText: 'Owner' } }
+                    ];
+                    // Best-effort: do not fail if send fails
+                    await sendButtons(sock, chatId, 'Quick actions:', `Use these shortcuts after your command`, quickButtons, message);
+                }
+            } catch (e) {
+                // Ignore errors from suggestion buttons to avoid breaking command flow
+                console.error('Suggestion buttons error:', e && e.message ? e.message : e);
+            }
         }
     } catch (error) {
         console.error('❌ Error in message handler:', error.message);
