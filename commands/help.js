@@ -12,8 +12,50 @@ function getUptime() {
   const hours = Math.floor((uptime % 86400) / 3600);
   const minutes = Math.floor((uptime % 3600) / 60);
   const seconds = Math.floor(uptime % 60);
-  return days > 0 ? `${days}d ${hours}h ${minutes}m \( {seconds}s` : ` \){hours}h ${minutes}m ${seconds}s`;
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours) parts.push(`${hours}h`);
+  if (minutes) parts.push(`${minutes}m`);
+  parts.push(`${seconds}s`);
+  return parts.join(' ');
 }
+
+const LOCALES = {
+  en: {
+    title: 'Premium Menu',
+    subtitle: 'Explore powerful commands • 24/7 Uptime',
+    helpPrompt: 'Select a category to view commands',
+    footer: 'Powered by Mickey Glitch',
+    categories: {
+      general: 'General',
+      group: 'Group Management',
+      settings: 'Bot Settings',
+      media: 'Media & Stickers',
+      ai: 'AI Powered',
+      fun: 'Fun Effects',
+      download: 'Downloader',
+      meme: 'Meme Templates',
+      anime: 'Anime Reactions'
+    }
+  },
+  sw: {
+    title: 'Menyu ya Premium',
+    subtitle: 'Gundua amri zenye nguvu • 24/7',
+    helpPrompt: 'Chagua kategoria ili uone amri',
+    footer: 'Imetengenezwa na Mickey Glitch',
+    categories: {
+      general: 'Msingi',
+      group: 'Usimamizi wa Kikundi',
+      settings: 'Mipangilio ya Bot',
+      media: 'Vyombo & Stickers',
+      ai: 'AI',
+      fun: 'Burudani',
+      download: 'Download',
+      meme: 'Meme Templates',
+      anime: 'Athari za Anime'
+    }
+  }
+};
 
 /**
  * Modern Premium Help Menu – One Command Per Line
@@ -193,84 +235,123 @@ module.exports = async (sock, chatId, message, args) => {
       { quickReplyButton: { displayText: 'Menu', id: '.menu' } }
     ];
 
-    // Primary interactive message (use helper to normalize payload)
-    const { sendButtons } = require('../lib/myfunc');
-    await sendButtons(sock, chatId, HELP, `✦ ${botName} • Powered by Mickey Glitch ✦`, buttons, message, {
-      contextInfo: {
-        isForwarded: true,
-        forwardingScore: 999,
-        externalAdReply: {
-          title: `✦ ${botName} Premium Menu ✦`,
-          body: 'Explore all powerful commands • 24/7 Uptime',
-          thumbnailUrl: banner,
-          sourceUrl: sourceUrl,
-          mediaType: 1,
-          renderLargerThumbnail: true
-        }
-      }
-    });
+    // Categories mapping (used for list menu and category details)
+    const CATEGORIES = {
+      general: ['menu','ping','alive','halotel','phone','tts','owner','lyrics','groupinfo','staff','url','fancy'],
+      group: ['ban','promote','demote','mute','unmute','delete','kick','add','warn','antilink','antibadword','clear','tag','tagall','hidetag','resetlink','antitag','setgdesc','setgname','setgpp'],
+      settings: ['mode','clearsession','antidelete','cleartmp','update','settings','setpp','autoreact','autostatus','autotyping','autoread','autoreply','anticall','pmblocker','setmention','mention'],
+      media: ['sticker','simage','tgsticker','take','emojimix','blur','igs','igsc','video','play'],
+      ai: ['gpt','gemini','imagine'],
+      fun: ['compliment','character','wasted','stupid'],
+      download: ['song','video','spotify','instagram','facebook','tiktok','ytmp4'],
+      meme: ['heart','horny','circle','lgbt','namecard','oogway','tweet','ytcomment','comrade','glass','passed','triggered'],
+      anime: ['neko','waifu','nom','poke','cry','kiss','pat','hug','wink','facepalm']
+    };
 
-  } catch (err) {
-    console.error("Help menu error (buttons):", err);
-    // Fallback: send plain text help if interactive message fails
+    // Determine locale (allow settings.defaultLang, fallback to 'en')
+    const lang = (settings.defaultLang || 'en').toLowerCase().startsWith('sw') ? 'sw' : 'en';
+    const L = LOCALES[lang] || LOCALES.en;
+
+    // If args provided (e.g., '.help media' or '.help 1'), show category detail
+    const argText = (args || '').toString().trim();
+    const categoryArg = (argText.split(' ')[1] || '').toLowerCase() || (argText.split(' ')[0] && argText.split(' ')[0] !== '.help' ? argText.split(' ')[0] : '');
+
+    // Helper to pretty-format a category
+    const formatCategory = (key) => {
+      const commands = CATEGORIES[key] || [];
+      if (!commands.length) return `${L.categories[key] || key}: (no commands)`;
+      return `*${L.categories[key] || key}*\n\n` + commands.map(c => `• ${c}`).join('\n');
+    };
+
+    if (categoryArg) {
+      // Map numeric selection (1..n) to category keys (stable order)
+      const keys = Object.keys(CATEGORIES);
+      let key = categoryArg;
+      if (/^\d+$/.test(categoryArg)) {
+        const idx = parseInt(categoryArg, 10) - 1;
+        if (idx >= 0 && idx < keys.length) key = keys[idx];
+      }
+      // Normalize known synonyms
+      key = key.replace(/^\./, '').trim();
+      // If it's a name like 'media' or 'general', use it, else check for mapping
+      if (!CATEGORIES[key]) {
+        // try to match by category short name
+        const found = keys.find(k => k.startsWith(key) || (L.categories[k] && L.categories[k].toLowerCase().includes(key)));
+        if (found) key = found;
+      }
+
+      if (CATEGORIES[key]) {
+        const text = `${L.title} • ${L.categories[key] || key}\n\n${formatCategory(key)}\n\n${L.footer}`;
+        // Offer a Back button
+        const { sendButtons } = require('../lib/myfunc');
+        const navButtons = [
+          { quickReplyButton: { displayText: 'Back', id: '.help' } },
+          { quickReplyButton: { displayText: 'Main Menu', id: '.menu' } },
+          { quickReplyButton: { displayText: 'Owner', id: 'owner' } }
+        ];
+        await sendButtons(sock, chatId, text, L.footer, navButtons, message);
+        return;
+      }
+    }
+
+    // Otherwise send a professional single-select list of categories
+    const sections = [
+      {
+        title: L.helpPrompt,
+        rows: Object.keys(CATEGORIES).map((k, i) => ({
+          title: `${i + 1}. ${L.categories[k] || k}`,
+          rowId: `.help ${k}`,
+          description: `View ${L.categories[k] || k} commands`
+        }))
+      }
+    ];
+
+    const { sendList, sendButtons } = require('../lib/myfunc');
+
+    // Quick action footer buttons
+    const quick = [
+      { quickReplyButton: { displayText: 'Owner', id: 'owner' } },
+      { quickReplyButton: { displayText: 'Support', id: 'support' } },
+      { quickReplyButton: { displayText: 'Language: EN', id: '.help en' } }
+    ];
+
+    // Try list first (best UX), fallback to buttons
     try {
-      await sock.sendMessage(chatId, {
-        text: HELP,
+      await sendList(sock, chatId, `${L.title} — ${botName}\n\n${L.subtitle}\n\nUptime: ${getUptime()}`, L.footer, `${botName} • ${L.title}`, 'Choose category', sections, message, {
         contextInfo: {
-          isForwarded: true,
-          forwardingScore: 999,
           externalAdReply: {
-            title: `✦ ${settings.botName || 'Mickey Glitch'} Premium Menu ✦`,
-            body: 'Explore all powerful commands • 24/7 Uptime',
+            title: `${botName} • ${L.title}`,
+            body: L.subtitle,
             thumbnailUrl: banner,
             sourceUrl: sourceUrl,
             mediaType: 1,
             renderLargerThumbnail: true
           }
         }
-      }, { quoted: message });
-    } catch (err2) {
-      console.error("Help menu fallback error:", err2);
-      await sock.sendMessage(chatId, { 
-        text: "⚠️ Failed to load help menu. Please try again later." 
-      }, { quoted: message });
+      });
+
+      // Also send quick buttons as companion (some clients show list but not template buttons)
+      await sendButtons(sock, chatId, 'Quick actions:', L.footer, quick, message);
+    } catch (err) {
+      // Fallback to buttons-only presentation
+      console.error('Help list send failed, falling back to buttons:', err);
+      await sendButtons(sock, chatId, `${L.title} — ${botName}\n\n${L.subtitle}\n\nUptime: ${getUptime()}`, L.footer, quick, message, {
+        contextInfo: {
+          externalAdReply: {
+            title: `${botName} • ${L.title}`,
+            body: L.subtitle,
+            thumbnailUrl: banner,
+            sourceUrl: sourceUrl,
+            mediaType: 1,
+            renderLargerThumbnail: true
+          }
+        }
+      });
     }
+  } catch (err) {
+    console.error("Help menu error:", err);
+    await sock.sendMessage(chatId, { 
+      text: "⚠️ Failed to load help menu. Please try again later." 
+    }, { quoted: message });
   }
-};
-
-// Auto-discover commands (optimized)
-module.exports.getAllCommands = function () {
-  const commands = new Set();
-
-  try {
-    if (global.plugins && typeof global.plugins === 'object') {
-      for (const key in global.plugins) {
-        const plugin = global.plugins[key];
-        if (plugin?.disabled) continue;
-
-        const cmds = Array.isArray(plugin.command) ? plugin.command : (plugin.command ? [plugin.command] : []);
-        cmds.forEach(c => typeof c === 'string' && commands.add(c.replace(/^\^?\/?\.?/, '').toLowerCase()));
-      }
-    }
-
-    const dir = __dirname;
-    const files = fs.readdirSync(dir).filter(f => f.endsWith('.js') && f !== 'help.js');
-
-    files.forEach(file => {
-      try {
-        const filePath = path.join(dir, file);
-        delete require.cache[require.resolve(filePath)];
-        const mod = require(filePath);
-
-        const cmds = Array.isArray(mod.command) ? mod.command : (mod.command ? [mod.command] : []);
-        cmds.forEach(c => typeof c === 'string' && commands.add(c.replace(/^\^?\/?\.?/, '').toLowerCase()));
-
-        commands.add(file.replace('.js', '').toLowerCase());
-      } catch (e) {}
-    });
-  } catch (e) {
-    console.error("Error discovering commands:", e);
-  }
-
-  return Array.from(commands).sort();
 };
