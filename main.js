@@ -1193,23 +1193,26 @@ async function handleMessages(sock, messageUpdate, printLog) {
         if (userMessage.startsWith('.')) {
             // After command is processed successfully
             await addCommandReaction(sock, message);
-            try {
-                // Suggest helpful quick-action buttons after most commands (skip help/menu to avoid duplicates)
-                const skipMenu = ['.help', '.menu', '.bot', '.list', '.cmd', '.commands'];
-                const baseCmd = userMessage.split(' ')[0];
-                if (!skipMenu.includes(baseCmd)) {
-                    const { sendButtons } = require('./lib/myfunc');
-                    const quickButtons = [
-                        { quickReplyButton: { displayText: 'Menu', id: '.menu' } },
-                        { quickReplyButton: { displayText: 'Help', id: '.help' } },
-                        { quickReplyButton: { displayText: 'Owner', id: 'owner' } }
-                    ];
-                    // Best-effort: send as templateButtons (more reliable on clients)
-                    await sendButtons(sock, chatId, 'Quick actions:', `Use these shortcuts after your command`, quickButtons, message);
+            // Only show quick-action suggestions when a command was actually executed
+            if (commandExecuted !== false) {
+                try {
+                    // Suggest helpful quick-action buttons after most commands (skip help/menu to avoid duplicates)
+                    const skipMenu = ['.help', '.menu', '.bot', '.list', '.cmd', '.commands'];
+                    const baseCmd = userMessage.split(' ')[0];
+                    if (!skipMenu.includes(baseCmd)) {
+                        const { sendButtons } = require('./lib/myfunc');
+                        const quickButtons = [
+                            { quickReplyButton: { displayText: 'Menu', id: '.menu' } },
+                            { quickReplyButton: { displayText: 'Help', id: '.help' } },
+                            { quickReplyButton: { displayText: 'Owner', id: 'owner' } }
+                        ];
+                        // Best-effort: send as templateButtons (more reliable on clients)
+                        await sendButtons(sock, chatId, 'Quick actions:', `Use these shortcuts after your command`, quickButtons, message);
+                    }
+                } catch (e) {
+                    // Ignore errors from suggestion buttons to avoid breaking command flow
+                    console.error('Suggestion buttons error:', e && e.message ? e.message : e);
                 }
-            } catch (e) {
-                // Ignore errors from suggestion buttons to avoid breaking command flow
-                console.error('Suggestion buttons error:', e && e.message ? e.message : e);
             }
         }
     } catch (error) {
