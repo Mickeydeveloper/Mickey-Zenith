@@ -240,6 +240,61 @@ async function handleMessages(sock, messageUpdate, printLog) {
                 console.log(`⚠️ Unhandled button: ${buttonId}`);
                 return;
             }
+
+            // Handle list responses (single-select list menus)
+            if (message.message?.listResponseMessage || message.message?.singleSelectReply) {
+                const list = message.message.listResponseMessage || message.message.singleSelectReply || message.message?.singleSelectReply;
+                const selectedId = list?.singleSelectReply?.selectedRowId || list?.selectedRowId || list?.singleSelectReply?.rowId || list?.rowId || null;
+                if (!selectedId) return;
+                console.log(`🔘 List selected: ${selectedId}`);
+
+                // Reuse the same buttonHandlers logic for common ids
+                const listHandlers = {
+                    'channel': async () => {
+                        await sock.sendMessage(chatId, { text: '📢 *Join our Channel:*\nhttps://whatsapp.com/channel/0029Va90zAnIHphOuO8Msp3A' }, { quoted: message });
+                    },
+                    'owner': async () => {
+                        const ownerCommand = require('./commands/owner');
+                        await ownerCommand(sock, chatId, message);
+                    },
+                    'support': async () => {
+                        await sock.sendMessage(chatId, { text: '🔗 *Support Group*\n\nJoin our support community:\nhttps://chat.whatsapp.com/GA4WrOFythU6g3BFVubYM7?mode=wwt' }, { quoted: message });
+                    }
+                };
+
+                if (listHandlers[selectedId]) {
+                    try {
+                        await listHandlers[selectedId]();
+                        return;
+                    } catch (e) {
+                        console.error(`Error handling list ${selectedId}:`, e);
+                    }
+                }
+
+                // If the selected id looks like a command, treat it as such
+                if (selectedId && (selectedId.startsWith('.') || selectedId === 'msgowner' || selectedId === '.msgowner')) {
+                    try {
+                        if (selectedId === '.msgowner' || selectedId === 'msgowner') {
+                            const settings = require('./settings');
+                            const ownerNumber = settings.ownerNumber || '';
+                            if (ownerNumber) {
+                                await sock.sendMessage(chatId, {
+                                    text: `💬 You can message the owner here:
+    https://wa.me/${ownerNumber}`
+                                }, { quoted: message });
+                            } else {
+                                await sock.sendMessage(chatId, { text: '💬 Owner number is not configured.' }, { quoted: message });
+                            }
+                            return;
+                        }
+
+                        userMessage = selectedId.toLowerCase();
+                    } catch (e) {
+                        console.error(`Error handling command list ${selectedId}:`, e);
+                        return;
+                    }
+                }
+            }
         }
 
             let userMessage = (
