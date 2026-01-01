@@ -1,357 +1,250 @@
-const axios = require("axios");
+const axios = require('axios');
 const settings = require('../settings');
 const fs = require('fs');
 const path = require('path');
 
-/**
- * Dynamic Uptime Formatter
- */
+// Small uptime helper (fixed formatting)
 function getUptime() {
   const uptime = process.uptime();
   const days = Math.floor(uptime / 86400);
   const hours = Math.floor((uptime % 86400) / 3600);
   const minutes = Math.floor((uptime % 3600) / 60);
   const seconds = Math.floor(uptime % 60);
-  const parts = [];
-  if (days) parts.push(`${days}d`);
-  if (hours) parts.push(`${hours}h`);
-  if (minutes) parts.push(`${minutes}m`);
-  parts.push(`${seconds}s`);
-  return parts.join(' ');
+  return days > 0 ? `${days}d ${hours}h ${minutes}m ${seconds}s` : `${hours}h ${minutes}m ${seconds}s`;
 }
 
-const LOCALES = {
+// Internationalized short strings (English + Swahili)
+const I18N = {
   en: {
-    title: 'Premium Menu',
-    subtitle: 'Explore powerful commands • 24/7 Uptime',
-    helpPrompt: 'Select a category to view commands',
-    footer: 'Powered by Mickey Glitch',
-    categories: {
-      general: 'General',
-      group: 'Group Management',
-      settings: 'Bot Settings',
-      media: 'Media & Stickers',
-      ai: 'AI Powered',
-      fun: 'Fun Effects',
-      download: 'Downloader',
-      meme: 'Meme Templates',
-      anime: 'Anime Reactions'
-    }
+    header: (botName) => `✦ ${botName} • Help Center ✦`,
+    intro: (botName) => `Welcome to *${botName}* — reply with a number to browse categories.
+Reply with a command name (e.g., ".play") to view usage.
+Uptime: ${getUptime()}`,
+    replyInstructions: `Reply with a number to open a category, or reply with 'next' / 'prev' to navigate pages, or reply with the command name for details.`,
+    footer: (top) => `Powered by ${top}`,
+    noCommands: 'No commands found in this category.',
+    commandDetail: 'Command details',
+    notFound: 'Command not found.'
   },
   sw: {
-    title: 'Menyu ya Premium',
-    subtitle: 'Gundua amri zenye nguvu • 24/7',
-    helpPrompt: 'Chagua kategoria ili uone amri',
-    footer: 'Imetengenezwa na Mickey Glitch',
-    categories: {
-      general: 'Msingi',
-      group: 'Usimamizi wa Kikundi',
-      settings: 'Mipangilio ya Bot',
-      media: 'Vyombo & Stickers',
-      ai: 'AI',
-      fun: 'Burudani',
-      download: 'Download',
-      meme: 'Meme Templates',
-      anime: 'Athari za Anime'
-    }
+    header: (botName) => `✦ ${botName} • Kituo cha Msaada ✦`,
+    intro: (botName) => `Karibu *${botName}* — jibu na nambari kuchunguza makundi.
+Jibu na jina la amri (mfano ".play") kuona matumizi.
+Muda wa kazi: ${getUptime()}`,
+    replyInstructions: `Jibu na nambari kufungua kundi, au 'next' / 'prev' kuendelea, au jibu na jina la amri kwa maelezo.`,
+    footer: (top) => `Inaandaliwa na ${top}`,
+    noCommands: 'Hakuna amri katika kundi hili.',
+    commandDetail: 'Maelezo ya amri',
+    notFound: 'Amri haikupatikana.'
   }
 };
 
-/**
- * Modern Premium Help Menu – One Command Per Line
- */
-const HELP = `
-           ✦ ✦ ✦ ${settings.botName || 'Mickey Glitch'} ✦ ✦ ✦
-                  Premium Edition • Always Active
+// Command category mapping (best-effort)
+const CATEGORY_MAP = {
+  'General': ['menu','ping','alive','owner','settings','help','status','jid','url','phone','ss','trt','vv'],
+  'Group Management': ['ban','promote','demote','mute','unmute','kick','add','warn','antilink','antibadword','clear','tag','tagall','hidetag','resetlink','antitag','welcome','goodbye','setgdesc','setgname','setgpp'],
+  'Bot Settings': ['mode','clearsession','antidelete','cleartmp','update','setpp','autoreact','autostatus','autotyping','autoread','autoreply','anticall','pmblocker','autobio'],
+  'Media & Stickers': ['sticker','simage','tgsticker','take','emojimix','blur','igs','igsc','stickertelegram'],
+  'AI Powered': ['ai','gpt','gemini','imagine'],
+  'Fun Effects': ['compliment','character','wasted','stupid'],
+  'Downloader': ['play','song','video','spotify','instagram','facebook','tiktok','ytmp4','ytdl'],
+  'Utilities': ['url','lyrics','tts','translate','textmaker','viewonce'],
+  'Meme Templates': ['heart','horny','circle','lgbt','lolice','namecard','tweet','ytcomment','gay','glass','jail','passed','triggered'],
+  'Anime Reactions': ['neko','waifu','loli','nom','poke','cry','kiss','pat','hug','wink','facepalm']
+};
 
-Bot Name   : ${settings.botName || 'Mickey Glitch'}
-Owner      : ${settings.botOwner || 'Mozy24'} ${settings.ownerNumber ? '(+' + settings.ownerNumber + ')' : ''}
-Version    : ${settings.version || '3.0.5'}
-Uptime     : ${getUptime()}
-Status     : ✅ Online & Fully Active
+// Helper to build categorized command list from discovered commands
+function buildCategories(allCommands) {
+  const categories = {};
+  // Initialize categories
+  for (const cat of Object.keys(CATEGORY_MAP)) categories[cat] = [];
+  categories['Other'] = [];
 
-                   ✦ Command Categories ✦
+  for (const cmd of allCommands) {
+    const name = cmd.toLowerCase();
+    let placed = false;
+    for (const [cat, list] of Object.entries(CATEGORY_MAP)) {
+      if (list.includes(name)) {
+        categories[cat].push(name);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) categories['Other'].push(name);
+  }
 
-General
-• menu
-• ping
-• alive
-• halotel
-• phone
-• tts
-• owner
-• attp
-• lyrics
-• groupinfo
-• staff
-• vv
-• trt
-• ss
-• jid
-• url
-• fancy
+  // Convert to array of {name, commands}
+  return Object.keys(categories).map(name => ({ name, commands: categories[name].sort() })).filter(c => c.commands.length > 0);
+}
 
-Group Management
-• ban
-• promote
-• demote
-• mute
-• unmute
-• delete
-• kick
-• add
-• warn
-• antilink
-• antibadword
-• clear
-• tag
-• tagall
-• hidetag
-• chatbot
-• resetlink
-• antitag
-• welcome
-• goodbye
-• setgdesc
-• setgname
-• setgpp
+// Pagination helpers
+const INDEX_PER_PAGE = 6; // categories per index page
+const CATEGORY_PER_PAGE = 8; // commands per category page
 
-Bot Settings
-• mode
-• clearsession
-• antidelete
-• cleartmp
-• update
-• settings
-• setpp
-• autoreact
-• autostatus
-• autotying
-• autoread
-• anticall
-• pmblocker
-• setmention
-• mention
+function formatIndexPage(categories, page = 1, lang = 'en') {
+  const i18 = I18N[lang] || I18N.en;
+  const totalPages = Math.max(1, Math.ceil(categories.length / INDEX_PER_PAGE));
+  const p = Math.min(Math.max(1, page), totalPages);
+  const start = (p - 1) * INDEX_PER_PAGE;
+  const slice = categories.slice(start, start + INDEX_PER_PAGE);
 
-Media & Stickers
-• sticker
-• simage
-• tgsticker
-• take
-• emojimix
-• blur
-• igs
-• igsc
+  const lines = [];
+  lines.push(i18.header(settings.botName || 'Mickey Glitch'));
+  lines.push('');
+  lines.push(i18.intro(settings.botName || 'Mickey Glitch'));
+  lines.push('');
+  lines.push('📚 Categories:');
+  slice.forEach((c, i) => {
+    lines.push(`${start + i + 1}. ${c.name} — ${c.commands.length} commands`);
+  });
+  lines.push('');
+  lines.push(`Page ${p} of ${totalPages} — ${i18.replyInstructions}`);
+  lines.push('');
+  // meta token for reply parsing
+  lines.push(`[help_meta:type=index;page=${p};per=${INDEX_PER_PAGE};pages=${totalPages};lang=${lang}]`);
+  lines.push(i18.footer(settings.botName || 'Mickey Glitch'));
+  return lines.join('\n');
+}
 
-AI Powered
-• gpt
-• gemini
-• imagine
+function formatCategoryPage(category, catIndex, page = 1, lang = 'en') {
+  const i18 = I18N[lang] || I18N.en;
+  const totalPages = Math.max(1, Math.ceil(category.commands.length / CATEGORY_PER_PAGE));
+  const p = Math.min(Math.max(1, page), totalPages);
+  const start = (p - 1) * CATEGORY_PER_PAGE;
+  const slice = category.commands.slice(start, start + CATEGORY_PER_PAGE);
 
-Fun Effects
-• compliment
-• character
-• wasted
-• stupid
+  const lines = [];
+  lines.push(`${i18.header(settings.botName || 'Mickey Glitch')} — ${category.name}`);
+  lines.push('');
+  lines.push(`Showing ${start + 1}-${start + slice.length} of ${category.commands.length} commands`);
+  lines.push('');
+  slice.forEach((cmd, i) => {
+    lines.push(`${start + i + 1}. ${cmd}`);
+  });
+  lines.push('');
+  lines.push(`${i18.replyInstructions} — Reply with number to view details, or 'back' to return to categories.`);
+  lines.push('');
+  lines.push(`[help_meta:type=cat;cat=${catIndex};page=${p};per=${CATEGORY_PER_PAGE};pages=${totalPages};lang=${lang}]`);
+  lines.push(i18.footer(settings.botName || 'Mickey Glitch'));
+  return lines.join('\n');
+}
 
-Logo Makers
-• metallic
-• ice
-• snow
-• impressive
-• matrix
-• light
-• neon
-• devil
-• purple
-• thunder
-• leaves
-• 1917
-• arena
-• hacker
-• sand
-• blackpink
-• glitch
-• fire
+function formatCommandDetail(cmdName, lang = 'en') {
+  const i18 = I18N[lang] || I18N.en;
+  // Try to read description from module file if possible
+  let desc = '';
+  try {
+    const filePath = path.join(__dirname, `${cmdName}.js`);
+    if (fs.existsSync(filePath)) {
+      const mod = require(filePath);
+      desc = mod.description || mod.help || (mod.command ? `Usage: .${Array.isArray(mod.command) ? mod.command[0] : mod.command}` : '');
+    }
+  } catch (e) { /* ignore */ }
 
-Downloader
-• play
-• song
-• video
-• spotify
-• instagram
-• facebook
-• tiktok
-• ytmp4
+  const lines = [];
+  lines.push(`${i18.commandDetail}: ${cmdName}`);
+  lines.push('');
+  lines.push(desc || 'No description available.');
+  lines.push('');
+  lines.push(`Example: .${cmdName} <args>`);
+  lines.push('');
+  lines.push(`[help_meta:type=cmd;cmd=${cmdName};lang=${lang}]`);
+  return lines.join('\n');
+}
 
-Meme Templates
-• heart
-• horny
-• circle
-• lgbt
-• lolice
-• its-so-stupid
-• namecard
-• oogway
-• tweet
-• ytcomment
-• comrade
-• gay
-• glass
-• jail
-• passed
-• triggered
-
-Anime Reactions
-• neko
-• waifu
-• loli
-• nom
-• poke
-• cry
-• kiss
-• pat
-• hug
-• wink
-• facepalm
-
-              ✨ Powered by Mickey Glitch ✨
-`.trim();
-
-/**
- * Send Modern Help Menu with Enhanced Visuals
- */
+// Main exposed help command
 module.exports = async (sock, chatId, message, args) => {
   try {
-    const botName = settings.botName || 'Mickey Glitch';
-    const banner = settings.bannerUrl || settings.menuBannerUrl || 'https://water-billimg.onrender.com/1761205727440.png';
-    const sourceUrl = settings.homepage || settings.website || settings.updateZipUrl || 'https://github.com';
+    // Determine language: check sender's locale hint if available (fallback to 'en')
+    let lang = 'en';
+    // If args contains a language token like 'sw' we could support but default to 'en'
 
-    // Buttons (use quickReplyButton template format for better client support)
-    const buttons = [
-      { quickReplyButton: { displayText: 'Owner', id: 'owner' } },
-      { quickReplyButton: { displayText: 'Channel', id: 'channel' } },
-      { quickReplyButton: { displayText: 'Support', id: 'support' } },
-      { quickReplyButton: { displayText: 'Menu', id: '.menu' } }
-    ];
+    const allCommands = module.exports.getAllCommands ? module.exports.getAllCommands() : [];
+    const categories = buildCategories(allCommands);
 
-    // Categories mapping (used for list menu and category details)
-    const CATEGORIES = {
-      general: ['menu','ping','alive','halotel','phone','tts','owner','lyrics','groupinfo','staff','url','fancy'],
-      group: ['ban','promote','demote','mute','unmute','delete','kick','add','warn','antilink','antibadword','clear','tag','tagall','hidetag','resetlink','antitag','setgdesc','setgname','setgpp'],
-      settings: ['mode','clearsession','antidelete','cleartmp','update','settings','setpp','autoreact','autostatus','autotyping','autoread','autoreply','anticall','pmblocker','setmention','mention'],
-      media: ['sticker','simage','tgsticker','take','emojimix','blur','igs','igsc','video','play'],
-      ai: ['gpt','gemini','imagine'],
-      fun: ['compliment','character','wasted','stupid'],
-      download: ['song','video','spotify','instagram','facebook','tiktok','ytmp4'],
-      meme: ['heart','horny','circle','lgbt','namecard','oogway','tweet','ytcomment','comrade','glass','passed','triggered'],
-      anime: ['neko','waifu','nom','poke','cry','kiss','pat','hug','wink','facepalm']
-    };
+    // Parse args: could be undefined, a number (category), two numbers (cat page), or a command name
+    const raw = (args || '').toString().trim();
+    if (!raw) {
+      const text = formatIndexPage(categories, 1, lang);
+      await sock.sendMessage(chatId, { text }, { quoted: message });
+      return;
+    }
 
-    // Determine locale (allow settings.defaultLang, fallback to 'en')
-    const lang = (settings.defaultLang || 'en').toLowerCase().startsWith('sw') ? 'sw' : 'en';
-    const L = LOCALES[lang] || LOCALES.en;
+    const parts = raw.split(/\s+/).slice(1); // args comes as like '.help 2' in main; strip leading token if present
+    // If args string begins with a dot plus number, remove dot
+    let argStr = raw.replace(/^\.help\s*/i, '').trim();
+    const tokens = argStr.split(/\s+/).filter(Boolean);
 
-    // If args provided (e.g., '.help media' or '.help 1'), show category detail
-    const argText = (args || '').toString().trim();
-    const categoryArg = (argText.split(' ')[1] || '').toLowerCase() || (argText.split(' ')[0] && argText.split(' ')[0] !== '.help' ? argText.split(' ')[0] : '');
-
-    // Helper to pretty-format a category
-    const formatCategory = (key) => {
-      const commands = CATEGORIES[key] || [];
-      if (!commands.length) return `${L.categories[key] || key}: (no commands)`;
-      return `*${L.categories[key] || key}*\n\n` + commands.map(c => `• ${c}`).join('\n');
-    };
-
-    if (categoryArg) {
-      // Map numeric selection (1..n) to category keys (stable order)
-      const keys = Object.keys(CATEGORIES);
-      let key = categoryArg;
-      if (/^\d+$/.test(categoryArg)) {
-        const idx = parseInt(categoryArg, 10) - 1;
-        if (idx >= 0 && idx < keys.length) key = keys[idx];
-      }
-      // Normalize known synonyms
-      key = key.replace(/^\./, '').trim();
-      // If it's a name like 'media' or 'general', use it, else check for mapping
-      if (!CATEGORIES[key]) {
-        // try to match by category short name
-        const found = keys.find(k => k.startsWith(key) || (L.categories[k] && L.categories[k].toLowerCase().includes(key)));
-        if (found) key = found;
-      }
-
-      if (CATEGORIES[key]) {
-        const text = `${L.title} • ${L.categories[key] || key}\n\n${formatCategory(key)}\n\n${L.footer}`;
-        // Offer a Back button
-        const { sendButtons } = require('../lib/myfunc');
-        const navButtons = [
-          { quickReplyButton: { displayText: 'Back', id: '.help' } },
-          { quickReplyButton: { displayText: 'Main Menu', id: '.menu' } },
-          { quickReplyButton: { displayText: 'Owner', id: 'owner' } }
-        ];
-        await sendButtons(sock, chatId, text, L.footer, navButtons, message);
+    // Numeric only: category index
+    if (/^\d+$/.test(tokens[0])) {
+      const catIndex = parseInt(tokens[0], 10);
+      const page = tokens[1] && /^\d+$/.test(tokens[1]) ? parseInt(tokens[1], 10) : 1;
+      const idx = catIndex - 1; // categories array is 0-based
+      if (idx < 0 || idx >= categories.length) {
+        await sock.sendMessage(chatId, { text: I18N[lang].notFound }, { quoted: message });
         return;
       }
+      const text = formatCategoryPage(categories[idx], catIndex, page, lang);
+      await sock.sendMessage(chatId, { text }, { quoted: message });
+      return;
     }
 
-    // Otherwise send a professional single-select list of categories
-    const sections = [
-      {
-        title: L.helpPrompt,
-        rows: Object.keys(CATEGORIES).map((k, i) => ({
-          title: `${i + 1}. ${L.categories[k] || k}`,
-          rowId: `.help ${k}`,
-          description: `View ${L.categories[k] || k} commands`
-        }))
-      }
-    ];
-
-    const { sendList, sendButtons } = require('../lib/myfunc');
-
-    // Quick action footer buttons
-    const quick = [
-      { quickReplyButton: { displayText: 'Owner', id: 'owner' } },
-      { quickReplyButton: { displayText: 'Support', id: 'support' } },
-      { quickReplyButton: { displayText: 'Language: EN', id: '.help en' } }
-    ];
-
-    // Try list first (best UX), fallback to buttons
-    try {
-      await sendList(sock, chatId, `${L.title} — ${botName}\n\n${L.subtitle}\n\nUptime: ${getUptime()}`, L.footer, `${botName} • ${L.title}`, 'Choose category', sections, message, {
-        contextInfo: {
-          externalAdReply: {
-            title: `${botName} • ${L.title}`,
-            body: L.subtitle,
-            thumbnailUrl: banner,
-            sourceUrl: sourceUrl,
-            mediaType: 1,
-            renderLargerThumbnail: true
-          }
-        }
-      });
-
-      // Also send quick buttons as companion (some clients show list but not template buttons)
-      await sendButtons(sock, chatId, 'Quick actions:', L.footer, quick, message);
-    } catch (err) {
-      // Fallback to buttons-only presentation
-      console.error('Help list send failed, falling back to buttons:', err);
-      await sendButtons(sock, chatId, `${L.title} — ${botName}\n\n${L.subtitle}\n\nUptime: ${getUptime()}`, L.footer, quick, message, {
-        contextInfo: {
-          externalAdReply: {
-            title: `${botName} • ${L.title}`,
-            body: L.subtitle,
-            thumbnailUrl: banner,
-            sourceUrl: sourceUrl,
-            mediaType: 1,
-            renderLargerThumbnail: true
-          }
-        }
-      });
+    // If starts with a known command name
+    const cmdName = tokens[0].replace(/^\./, '').toLowerCase();
+    if (allCommands.includes(cmdName)) {
+      const text = formatCommandDetail(cmdName, lang);
+      await sock.sendMessage(chatId, { text }, { quoted: message });
+      return;
     }
+
+    // Unknown arg: show index as fallback
+    const text = formatIndexPage(categories, 1, lang);
+    await sock.sendMessage(chatId, { text }, { quoted: message });
+
   } catch (err) {
-    console.error("Help menu error:", err);
-    await sock.sendMessage(chatId, { 
-      text: "⚠️ Failed to load help menu. Please try again later." 
-    }, { quoted: message });
+    console.error('Help menu error (smart):', err);
+    await sock.sendMessage(chatId, { text: '⚠️ Failed to load help menu. Please try again later.' }, { quoted: message });
   }
+};
+
+// Re-add getAllCommands utility so other parts can use it
+module.exports.getAllCommands = function () {
+  const commands = new Set();
+  try {
+    if (global.plugins && typeof global.plugins === 'object') {
+      for (const key in global.plugins) {
+        const plugin = global.plugins[key];
+        if (plugin?.disabled) continue;
+
+        const cmds = Array.isArray(plugin.command) ? plugin.command : (plugin.command ? [plugin.command] : []);
+        cmds.forEach(c => typeof c === 'string' && commands.add(c.replace(/^\^?\/?\.?/, '').toLowerCase()));
+      }
+    }
+
+    const dir = __dirname;
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.js') && f !== 'help.js');
+
+    files.forEach(file => {
+      try {
+        const filePath = path.join(dir, file);
+        delete require.cache[require.resolve(filePath)];
+        const mod = require(filePath);
+
+        const cmds = Array.isArray(mod.command) ? mod.command : (mod.command ? [mod.command] : []);
+        cmds.forEach(c => typeof c === 'string' && commands.add(c.replace(/^\^?\/?\.?/, '').toLowerCase()));
+
+        commands.add(file.replace('.js', '').toLowerCase());
+      } catch (e) { }
+    });
+  } catch (e) {
+    console.error('Error discovering commands:', e);
+  }
+
+  return Array.from(commands).sort();
+};
+
+// Return categorized list for external use (fresh computed)
+module.exports.getCategories = function () {
+  const allCommands = module.exports.getAllCommands ? module.exports.getAllCommands() : [];
+  return buildCategories(allCommands);
 };
