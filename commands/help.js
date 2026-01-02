@@ -14,7 +14,7 @@ const EXCLUDE = [
   'help' // exclude self by default; add other command base names here (e.g., 'debug')
 ];
 
-const PAGE_SIZE = 36; // number of commands per page
+// No paging — always show the full, auto-synced command list
 
 function getUptime() {
   const uptime = process.uptime();
@@ -45,22 +45,17 @@ function listCommandFiles() {
   return cmds;
 }
 
-function buildHelpMessage(cmdList, page = 1) {
+function buildHelpMessage(cmdList) {
   const total = cmdList.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const p = Math.min(Math.max(1, page), totalPages);
-  const start = (p - 1) * PAGE_SIZE;
-  const slice = cmdList.slice(start, start + PAGE_SIZE);
 
   const header = `┏━━〔 *${settings.botName || 'Bot'}* 〕━━┓\n` +
     `┃ 🧑‍🔧 Owner: ${settings.botOwner || 'owner'}\n` +
     `┃ 🔖 Version: v${settings.version || '?.?'}  |  ⏱ Uptime: ${getUptime()}\n` +
     `┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
 
-  const title = `*Commands*  (Page ${p}/${totalPages})\n` +
-    `Use *help <page>* to view other pages\n\n`;
+  const title = `*Commands*\n\n`;
 
-  const list = slice.map((c, i) => `• ${c}`).join('\n');
+  const list = cmdList.map(c => `• ${c}`).join('\n');
 
   const footer = `\n\n*Total commands:* ${total}  —  *Excluded:* ${EXCLUDE.length}`;
 
@@ -74,11 +69,6 @@ async function helpCommand(sock, chatId, message) {
 
   try {
     const text = readMessageText(message);
-    let page = 1;
-
-    // Parse page number if user sent like: "help 2" or ".help 2"
-    const m = text.match(/(\d+)/);
-    if (m) page = parseInt(m[1], 10) || 1;
 
     const cmdList = listCommandFiles();
     if (!cmdList.length) {
@@ -86,7 +76,7 @@ async function helpCommand(sock, chatId, message) {
       return;
     }
 
-    const helpText = buildHelpMessage(cmdList, page);
+    const helpText = buildHelpMessage(cmdList);
     await sock.sendMessage(chatId, { text: helpText }, { quoted: message });
 
   } catch (error) {
