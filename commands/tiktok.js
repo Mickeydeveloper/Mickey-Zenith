@@ -248,4 +248,186 @@ async function tiktokCommand(sock, chatId, message) {
     }
 }
 
+// --- New, improved implementation appended below ---
+
+const MAX_DIRECT_SEND = 100 * 1024 * 1024; // 100 MB
+
+async function fetchBufferFromUrl(url, opts = {}) {
+    const headers = Object.assign({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Encoding': 'identity'
+    }, opts.headers || {});
+
+    try {
+        const res = await axios.get(url, {
+            responseType: 'arraybuffer',
+            timeout: opts.timeout || 30000,
+            maxContentLength: opts.maxContentLength || Infinity,
+            maxBodyLength: opts.maxBodyLength || Infinity,
+            headers,
+            validateStatus: s => s >= 200 && s < 400
+        });
+        return Buffer.from(res.data);
+    } catch (e1) {
+        try {
+            const res = await axios.get(url, {
+                responseType: 'stream',
+                timeout: (opts.timeout || 30000) + 10000,
+                maxContentLength: opts.maxContentLength || Infinity,
+                maxBodyLength: opts.maxBodyLength || Infinity,
+                headers,
+                validateStatus: s => s >= 200 && s < 400
+            });
+            const chunks = [];
+            await new Promise((resolve, reject) => {
+                res.data.on('data', c => chunks.push(c));
+                res.data.on('end', resolve);
+                res.data.on('error', reject);
+            });
+            return Buffer.concat(chunks);
+        } catch (e2) {
+            console.error('fetchBufferFromUrl failed:', e1?.message || e1, e2?.message || e2);
+            throw e2;
+        }
+    }
+}
+
+function extractUrlFromMessage(message) {
+    const text = message?.message?.conversation || message?.message?.extendedTextMessage?.text || '';
+    const urlMatch = text.match(/https?:\/\/(?:www\.)?\S+/i);
+    if (urlMatch) return urlMatch[0].trim();
+
+    const parts = text.trim().split(/\s+/);
+    if (parts.length >= 2 && /https?:\/\//i.test(parts[1])) return parts.slice(1).join(' ').trim();
+
+    const ext = message?.message?.extendedTextMessage;
+    if (ext?.contextInfo?.quotedMessage) {
+        const quoted = ext.contextInfo.quotedMessage;
+        const qText = quoted.conversation || quoted.extendedTextMessage?.text || '';
+        const qMatch = qText.match(/https?:\/\/(?:www\.)?\S+/i);
+        if (qMatch) return qMatch[0].trim();
+    }
+
+    return null;
+}
+
+async function getVideoInfoFromApis(url) {
+    const endpoints = [
+        `https://api.vreden.my.id/api/v1/download/tiktok?url=${encodeURIComponent(url)}`,
+        `https://api.tikmate.app/api/lookup?url=${encodeURIComponent(url)}`,
+        `https://tikwm.com/?url=${encodeURIComponent(url)}`
+    ];
+
+    for (const ep of endpoints) {
+        try {
+            const res = await axios.get(ep, { timeout: 15000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const d = res.data;
+            if (!d) continue;
+
+            if (d.status && d.data) {
+                const dd = d.data;
+                const urls = Array.isArray(dd.urls) && dd.urls.length ? dd.urls : null;
+                const video_url = dd.video_url || dd.download_url || dd.url || (urls ? urls[0] : null);
+                const title = dd.metadata?.title || dd.title || null;
+                if (video_url) return { videoUrl: video_url, title };
+            }
+
+            if (d.success && d.data) {
+                const dd = d.data;
+                const video_url = dd.play || dd.nowm || dd.video || dd.download || null;
+                const title = dd.title || null;
+                if (video_url) return { videoUrl: video_url, title };
+            }
+
+            if (d.download && typeof d.download === 'string') return { videoUrl: d.download, title: d.title || null };
+            if (d.url) return { videoUrl: d.url, title: d.title || null };
+
+        } catch (e) {
+            // ignore individual endpoint failures
+        }
+    }
+
+    return null;
+}
+
+async function tiktokCommand(sock, chatId, message) {
+    try {
+        const msgId = message?.key?.id;
+        if (!msgId) return;
+        if (processedMessages.has(msgId)) return;
+        processedMessages.add(msgId);
+        setTimeout(() => processedMessages.delete(msgId), 5 * 60 * 1000);
+
+        const url = extractUrlFromMessage(message);
+        if (!url) {
+            return await sock.sendMessage(chatId, { text: 'Send a TikTok video link. Usage: .tiktok <url>' }, { quoted: message });
+        }
+
+        if (!/https?:\/\/(?:www\.)?(tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com)/i.test(url)) {
+            return await sock.sendMessage(chatId, { text: 'That does not look like a TikTok link. Please provide a valid TikTok URL.' }, { quoted: message });
+        }
+
+        await sock.sendMessage(chatId, { react: { text: '🔄', key: message.key } });
+
+        // Try APIs first
+        let info = await getVideoInfoFromApis(url);
+
+        // Fallback to ttdl
+        if (!info) {
+            try {
+                const data = await ttdl(url).catch(() => null);
+                if (data && Array.isArray(data.data) && data.data.length) {
+                    const item = data.data.find(d => d && (d.type === 'video' || /\.(mp4|webm|mov)$/i.test(d.url))) || data.data[0];
+                    if (item && item.url) info = { videoUrl: item.url, title: data.metadata?.title || item.title || null };
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        if (!info || !info.videoUrl) {
+            return await sock.sendMessage(chatId, { text: '❌ Could not retrieve the video URL. The link may be private or unavailable.' }, { quoted: message });
+        }
+
+        const videoUrl = info.videoUrl;
+        const title = info.title || 'TikTok Video';
+
+        try {
+            const buf = await fetchBufferFromUrl(videoUrl, { timeout: 45000 });
+
+            if (!buf || buf.length === 0) throw new Error('Downloaded buffer is empty');
+
+            if (buf.length > MAX_DIRECT_SEND) {
+                await sock.sendMessage(chatId, { text: `File too large (${(buf.length/(1024*1024)).toFixed(1)} MB) to send. Direct link: ${videoUrl}` }, { quoted: message });
+                return;
+            }
+
+            const peek = buf.toString('utf8', 0, Math.min(500, buf.length));
+            if (/error|blocked|403|404|not found/i.test(peek) && buf.length < 20000) throw new Error('Received error page');
+
+            await sock.sendMessage(chatId, {
+                video: buf,
+                mimetype: 'video/mp4',
+                caption: `𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑™\n\n📝 ${title}`
+            }, { quoted: message });
+
+            return;
+        } catch (downloadErr) {
+            console.error('Download failed:', downloadErr?.message || downloadErr);
+            try {
+                await sock.sendMessage(chatId, { video: { url: videoUrl }, mimetype: 'video/mp4', caption: `𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑™\n\n📝 ${title}` }, { quoted: message });
+                return;
+            } catch (err) {
+                console.error('Sending URL fallback failed:', err?.message || err);
+                return await sock.sendMessage(chatId, { text: '❌ Failed to download or send the TikTok video. Please try again or use a different link.' }, { quoted: message });
+            }
+        }
+
+    } catch (err) {
+        console.error('tiktokCommand error:', err);
+        try { await sock.sendMessage(chatId, { text: 'An error occurred while processing the TikTok download.' }, { quoted: message }); } catch {}
+    }
+}
+
 module.exports = tiktokCommand; 
