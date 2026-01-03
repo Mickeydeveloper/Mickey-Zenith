@@ -105,6 +105,36 @@ async function startXeonBotInc() {
         XeonBotInc.ev.on('creds.update', saveCreds)
         store.bind(XeonBotInc.ev)
 
+        // Attach channel/brand info to outgoing messages (externalAdReply)
+        // Channel/Media info
+        const channelRD = { id: '120363398106360290@newsletter', name: 'Mickey From Tanzania' };
+        // Wrap sendMessage to add externalAdReply when not present (safe, idempotent)
+        try {
+            const origSendMessage = XeonBotInc.sendMessage.bind(XeonBotInc);
+            XeonBotInc.sendMessage = async (jid, message, options = {}) => {
+                try {
+                    if (message && typeof message === 'object') {
+                        message.contextInfo = message.contextInfo || {};
+                        if (!message.contextInfo.externalAdReply) {
+                            message.contextInfo.externalAdReply = {
+                                title: channelRD.name,
+                                body: 'Channel/Media info',
+                                sourceUrl: `https://www.whatsapp.com/channel/${channelRD.id.split('@')[0]}`,
+                                mediaType: 1,
+                                renderLargerThumbnail: true
+                            };
+                        }
+                    }
+                } catch (e) {
+                    // Fail-safe: do not block original send
+                    console.debug && console.debug('attach channel info failed:', e && e.message ? e.message : e);
+                }
+                return origSendMessage(jid, message, options);
+            };
+        } catch (e) {
+            console.warn('Could not wrap sendMessage to attach channel info:', e && e.message ? e.message : e);
+        }
+
         // Message handling
         XeonBotInc.ev.on('messages.upsert', async chatUpdate => {
             try {
@@ -288,7 +318,6 @@ async function startXeonBotInc() {
                 // Success logs
                 console.log(chalk.yellow(`\n\n                  ${chalk.bold.blue(`[ ${global.botname} ]`)}\n\n`))
                 console.log(chalk.cyan(`< ================================================== >`))
-                console.log(chalk.magenta(`\n${global.themeemoji} YT CHANNEL: xxxx`))
                 console.log(chalk.magenta(`${global.themeemoji} WA NUMBER: ${owner}`))
                 console.log(chalk.magenta(`${global.themeemoji} CREDIT: 𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑™`))
                 console.log(chalk.green(`${global.themeemoji} ☀️ Bot Connected Successfully! ✅`))
