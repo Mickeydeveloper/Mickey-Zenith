@@ -22,25 +22,53 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-function findFirstUrlInObj(obj) {
-    const urlRegex = /(https?:\/\/[\w\-./?=&#%]+\.(mp4|m3u8|mov|ts)|https?:\/\/[\w\-./?=&#%]+)/i;
-    if (!obj) return null;
+function collectAllUrls(obj, out = new Set()) {
+    if (!obj) return out;
+    const urlRegex = /https?:\/\/[^\s\"'<>]+/ig;
     if (typeof obj === 'string') {
-        const m = obj.match(urlRegex);
-        return m ? m[0] : null;
+        let m;
+        while ((m = urlRegex.exec(obj)) !== null) out.add(m[0]);
+        return out;
     }
     if (Array.isArray(obj)) {
-        for (const item of obj) {
-            const v = findFirstUrlInObj(item);
-            if (v) return v;
-        }
-    } else if (typeof obj === 'object') {
-        for (const key of Object.keys(obj)) {
-            const v = findFirstUrlInObj(obj[key]);
-            if (v) return v;
-        }
+        for (const item of obj) collectAllUrls(item, out);
+        return out;
     }
-    return null;
+    if (typeof obj === 'object') {
+        for (const key of Object.keys(obj)) collectAllUrls(obj[key], out);
+        return out;
+    }
+    return out;
+}
+
+function isImageUrl(u) {
+    return /\.(jpe?g|png|webp|gif|bmp)(?:\?|$)/i.test(u);
+}
+
+function isVideoLike(u) {
+    return /\.(mp4|webm|m3u8|mov|ts|3gp|mkv)(?:\?|$)/i.test(u) || /(video|play|download|mp4|nowm)/i.test(u);
+}
+
+async function validateVideoUrl(url) {
+    try {
+        // Try HEAD first
+        const head = await axios.head(url, { ...AXIOS_DEFAULTS, timeout: 5000, maxRedirects: 5, validateStatus: s => s >= 200 && s < 400 });
+        const ct = (head.headers['content-type'] || '').toLowerCase();
+        if (ct.startsWith('video') || ct.includes('octet-stream')) return true;
+    } catch (e) {
+        // ignore, try GET stream
+    }
+
+    try {
+        const r = await axios.get(url, { ...AXIOS_DEFAULTS, responseType: 'stream', timeout: 8000, maxRedirects: 5 });
+        const ct = (r.headers['content-type'] || '').toLowerCase();
+        if (r.data && typeof r.data.destroy === 'function') r.data.destroy();
+        if (ct.startsWith('video') || ct.includes('octet-stream')) return true;
+    } catch (e) {
+        // failed to fetch
+    }
+
+    return false;
 }
 
 async function getTiktokDownload(url) {
@@ -48,20 +76,51 @@ async function getTiktokDownload(url) {
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (!res || !res.data) throw new Error('No response from TikTok API');
 
-    // Try common paths first
     const d = res.data;
-    const candidates = [
-        d.result?.video?.play, d.result?.nowm, d.result?.nowm || d.result?.video || d.result?.mp4,
-        d.data?.play, d.data?.video, d.video, d.download, d.url
-    ];
 
-    for (const c of candidates) {
-        if (typeof c === 'string' && c.startsWith('http')) return { url: c, meta: d };
+    // Collect candidate URLs from known fields and from scanning the whole response
+    const candidatesOrdered = [];
+    const pushIf = (u) => { if (u && typeof u === 'string' && u.startsWith('http')) candidatesOrdered.push(u); };
+
+    // Prefer common locations
+    pushIf(d.result?.video?.play);
+    pushIf(d.result?.nowm);
+    pushIf(d.result?.video || d.result?.mp4);
+    pushIf(d.data?.play);
+    pushIf(d.data?.video);
+    pushIf(d.video);
+    pushIf(d.download);
+    pushIf(d.url);
+
+    // Add all URLs found in the object
+    const all = Array.from(collectAllUrls(d));
+    for (const u of all) pushIf(u);
+
+    // Deduplicate
+    const unique = [...new Set(candidatesOrdered)];
+
+    // Filter out obvious images first
+    const nonImage = unique.filter(u => !isImageUrl(u));
+
+    // Sort: video-like URLs first
+    nonImage.sort((a, b) => (isVideoLike(b) ? 1 : 0) - (isVideoLike(a) ? 1 : 0));
+
+    // Try validating candidates (HEAD/stream) and return first valid video URL
+    for (const candidate of nonImage) {
+        try {
+            const ok = await validateVideoUrl(candidate);
+            if (ok) return { url: candidate, meta: d };
+        } catch (e) {
+            // ignore and continue
+        }
     }
 
-    // fallback: scan the whole JSON for first URL
-    const found = findFirstUrlInObj(d);
-    if (found) return { url: found, meta: d };
+    // As a last resort, allow video-like URLs even if validation failed
+    const fallback = nonImage.find(u => isVideoLike(u));
+    if (fallback) return { url: fallback, meta: d };
+
+    // If still nothing, try any URL (maybe it's behind redirects)
+    if (unique.length) return { url: unique[0], meta: d };
 
     throw new Error('Could not find a video URL in API response');
 }
