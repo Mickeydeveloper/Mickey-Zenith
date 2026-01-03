@@ -55,7 +55,7 @@ setInterval(() => {
     }
 }, 30_000)
 
-let phoneNumber = "255778018545"
+let phoneNumber = "255612130873"
 let owner = JSON.parse(fs.readFileSync('./data/owner.json'))
 
 global.botname = "𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑™"
@@ -223,23 +223,55 @@ async function startXeonBotInc() {
                 try {
                     const channelId = '120363398106360290@newsletter' // ← Change to your channel if different
 
-                    if (typeof XeonBotInc.newsletterFollow !== 'function') {
-                        console.warn(chalk.yellow('⚠️ newsletterFollow API not available on this Baileys version. Skipping auto-follow.'))
-                    } else {
-                        // Call and defensively handle any thrown error or unexpected response shape
-                        const followResult = await XeonBotInc.newsletterFollow(channelId).catch(err => err)
-
-                        if (followResult instanceof Error) {
-                            const msg = String(followResult.message || followResult)
-                            if (msg.includes('unexpected response structure')) {
-                                console.warn(chalk.yellow('✗ Failed to follow channel (unexpected response structure). This is non-fatal and will be ignored.'))
-                                console.warn(chalk.yellow(`  ${msg}`))
-                            } else {
-                                console.error(chalk.red('✗ Failed to follow channel:'), followResult)
-                            }
-                        } else {
-                            console.log(chalk.green(`✓ Bot successfully auto-followed WhatsApp Channel: ${channelId}`))
+                    // Helper to attempt a named method if present
+                    const tryMethod = async (name) => {
+                        if (typeof XeonBotInc[name] !== 'function') return null
+                        try {
+                            return await XeonBotInc[name](channelId)
+                        } catch (err) {
+                            return err
                         }
+                    }
+
+                    const candidateMethods = ['newsletterFollow', 'newsletterSubscribe', 'followChannel', 'subscribeToChannel', 'follow']
+                    let followResult = null
+                    let usedMethod = null
+
+                    for (const m of candidateMethods) {
+                        if (typeof XeonBotInc[m] !== 'function') continue
+                        followResult = await tryMethod(m)
+                        usedMethod = m
+
+                        // If result is an Error, continue to next method
+                        if (followResult instanceof Error) {
+                            console.warn(chalk.yellow(`⚠️ ${m} threw an error: ${String(followResult.message || followResult).slice(0,200)}`))
+                            followResult = null
+                            continue
+                        }
+
+                        // Non-error result found — evaluate if it's a success
+                        const ok = (
+                            followResult === true ||
+                            (typeof followResult === 'string' && /ok|success|subscribed|followed/i.test(followResult)) ||
+                            (typeof followResult === 'object' && (
+                                followResult.ok === true || followResult.success === true || followResult.followed === true || followResult.isFollowed === true || followResult.status === 200 || /ok|success|followed/i.test(String(followResult.status))
+                            ))
+                        )
+
+                        if (ok) {
+                            console.log(chalk.green(`✓ Bot successfully auto-followed WhatsApp Channel via ${m}: ${channelId}`))
+                            usedMethod = m
+                            break
+                        } else {
+                            // Unexpected but non-error response — log and treat as non-fatal success (to avoid repeated noisy failures)
+                            console.warn(chalk.yellow(`⚠️ ${m} returned unexpected response while trying to follow ${channelId}. Response recorded for debugging.`))
+                            console.debug && console.debug(followResult)
+                            break
+                        }
+                    }
+
+                    if (!usedMethod) {
+                        console.warn(chalk.yellow('⚠️ No channel follow API available on this Baileys version. Skipping auto-follow.'))
                     }
                 } catch (error) {
                     console.error(chalk.red('✗ Failed to follow channel:'), error && error.stack ? error.stack : error)
