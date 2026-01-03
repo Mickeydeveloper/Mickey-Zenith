@@ -115,6 +115,19 @@ async function startXeonBotInc() {
                 try {
                     if (message && typeof message === 'object') {
                         message.contextInfo = message.contextInfo || {};
+
+                        // Mark message as forwarded from the configured channel (if not already present)
+                        if (!message.contextInfo.isForwarded) message.contextInfo.isForwarded = true;
+                        if (!message.contextInfo.forwardingScore) message.contextInfo.forwardingScore = 999;
+                        if (!message.contextInfo.forwardedNewsletterMessageInfo) {
+                            message.contextInfo.forwardedNewsletterMessageInfo = {
+                                newsletterJid: channelRD.id,
+                                newsletterName: channelRD.name,
+                                serverMessageId: -1,
+                            };
+                        }
+
+                        // Preserve existing externalAdReply if set; otherwise add a simple channel ad
                         if (!message.contextInfo.externalAdReply) {
                             message.contextInfo.externalAdReply = {
                                 title: channelRD.name,
