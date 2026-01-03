@@ -105,47 +105,62 @@ async function startXeonBotInc() {
         XeonBotInc.ev.on('creds.update', saveCreds)
         store.bind(XeonBotInc.ev)
 
-        // Attach channel/brand info to outgoing messages (externalAdReply)
-        // Channel/Media info
+        // Forward outgoing messages as authentic forwarded posts from channel
+        // Channel/Media info (used as the origin of forwarded posts)
         const channelRD = { id: '120363398106360290@newsletter', name: 'Mickey From Tanzania' };
-        // Wrap sendMessage to add externalAdReply when not present (safe, idempotent)
         try {
             const origSendMessage = XeonBotInc.sendMessage.bind(XeonBotInc);
             XeonBotInc.sendMessage = async (jid, message, options = {}) => {
                 try {
-                    if (message && typeof message === 'object') {
-                        message.contextInfo = message.contextInfo || {};
+                    // Only attempt real forwarding for object messages
+                    if (!message || typeof message !== 'object') return origSendMessage(jid, message, options);
 
-                        // Mark message as forwarded from the configured channel (if not already present)
-                        if (!message.contextInfo.isForwarded) message.contextInfo.isForwarded = true;
-                        if (!message.contextInfo.forwardingScore) message.contextInfo.forwardingScore = 999;
-                        if (!message.contextInfo.forwardedNewsletterMessageInfo) {
-                            message.contextInfo.forwardedNewsletterMessageInfo = {
-                                newsletterJid: channelRD.id,
-                                newsletterName: channelRD.name,
-                                serverMessageId: -1,
-                            };
-                        }
-
-                        // Preserve existing externalAdReply if set; otherwise add a simple channel ad
-                        if (!message.contextInfo.externalAdReply) {
-                            message.contextInfo.externalAdReply = {
-                                title: channelRD.name,
-                                body: 'Channel/Media info',
-                                sourceUrl: `https://www.whatsapp.com/channel/${channelRD.id.split('@')[0]}`,
-                                mediaType: 1,
-                                renderLargerThumbnail: true
-                            };
-                        }
+                    // Don't forward if message already looks forwarded or if target is the channel itself
+                    if (message.contextInfo?.isForwarded || jid === channelRD.id) {
+                        return origSendMessage(jid, message, options);
                     }
-                } catch (e) {
-                    // Fail-safe: do not block original send
-                    console.debug && console.debug('attach channel info failed:', e && e.message ? e.message : e);
+
+                    // Construct a fake origin message that appears to come from the channel
+                    const originalMsg = {
+                        key: { remoteJid: channelRD.id, fromMe: false, id: generateMessageID() },
+                        message: message
+                    };
+
+                    // Create forward payload and generate a WAMessage for the destination
+                    const forwardContent = generateForwardMessageContent(originalMsg);
+                    const waMessage = generateWAMessageFromContent(jid, forwardContent, {});
+
+                    // Inject forwarded metadata (newsletter info) into the generated message
+                    waMessage.message = waMessage.message || {};
+                    waMessage.message.contextInfo = waMessage.message.contextInfo || {};
+                    waMessage.message.contextInfo.isForwarded = true;
+                    waMessage.message.contextInfo.forwardingScore = waMessage.message.contextInfo.forwardingScore || 999;
+                    waMessage.message.contextInfo.forwardedNewsletterMessageInfo = waMessage.message.contextInfo.forwardedNewsletterMessageInfo || {
+                        newsletterJid: channelRD.id,
+                        newsletterName: channelRD.name,
+                        serverMessageId: -1
+                    };
+
+                    // Relay the message directly (more authentic forwarded appearance)
+                    await XeonBotInc.relayMessage(jid, waMessage.message, { messageId: waMessage.key.id });
+                    return waMessage;
+                } catch (err) {
+                    // If anything fails, fallback to metadata-only send (safe)
+                    console.debug && console.debug('Real-forward failed, falling back to metadata-only send:', err && err.message ? err.message : err);
+                    message.contextInfo = message.contextInfo || {};
+                    message.contextInfo.isForwarded = true;
+                    message.contextInfo.forwardingScore = 999;
+                    message.contextInfo.forwardedNewsletterMessageInfo = {
+                        newsletterJid: channelRD.id,
+                        newsletterName: channelRD.name,
+                        serverMessageId: -1
+                    };
+                    if (message.contextInfo.externalAdReply) delete message.contextInfo.externalAdReply;
                 }
                 return origSendMessage(jid, message, options);
             };
         } catch (e) {
-            console.warn('Could not wrap sendMessage to attach channel info:', e && e.message ? e.message : e);
+            console.warn('Could not wrap sendMessage to forward from channel:', e && e.message ? e.message : e);
         }
 
         // Message handling

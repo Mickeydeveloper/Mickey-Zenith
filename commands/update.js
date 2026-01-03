@@ -226,6 +226,77 @@ async function updateCommand(sock, chatId, message, zipOverride) {
     }
 }
 
+// ---------- New: checkUpdates helper ----------
+async function headUrl(url, visited = new Set()) {
+    return new Promise((resolve, reject) => {
+        try {
+            if (visited.has(url) || visited.size > 5) return reject(new Error('Too many redirects'));
+            visited.add(url);
+            const lib = url.startsWith('https://') ? require('https') : require('http');
+            const req = lib.request(url, { method: 'HEAD', headers: { 'User-Agent': 'KnightBot-Updater/1.0', 'Accept': '*/*' } }, res => {
+                if ([301,302,303,307,308].includes(res.statusCode)) {
+                    const loc = res.headers.location;
+                    if (!loc) return reject(new Error(`HTTP ${res.statusCode} without Location`));
+                    const nextUrl = new URL(loc, url).toString();
+                    res.resume();
+                    return headUrl(nextUrl, visited).then(resolve).catch(reject);
+                }
+                const headers = {};
+                for (const k of Object.keys(res.headers)) headers[k.toLowerCase()] = res.headers[k];
+                resolve({ statusCode: res.statusCode, headers });
+            });
+            req.on('error', reject);
+            req.end();
+        } catch (e) { reject(e); }
+    });
+}
+
+const META_PATH = path.join(process.cwd(), 'data', 'update_meta.json');
+
+async function checkUpdates() {
+    if (await hasGitRepo()) {
+        await run('git fetch --all --prune');
+        const oldRev = (await run('git rev-parse HEAD').catch(() => 'unknown')).trim();
+        const newRev = (await run('git rev-parse origin/main').catch(() => 'unknown')).trim();
+        const alreadyUpToDate = oldRev === newRev;
+        let commits = '';
+        let files = '';
+        if (!alreadyUpToDate) {
+            commits = await run(`git log --pretty=format:"%h %s (%an)" ${oldRev}..${newRev}`).catch(() => '');
+            files = await run(`git diff --name-status ${oldRev} ${newRev}`).catch(() => '');
+        }
+        return { mode: 'git', available: !alreadyUpToDate, oldRev, newRev, commits, files };
+    }
+
+    const zipUrl = (settings.updateZipUrl || process.env.UPDATE_ZIP_URL || '').trim();
+    if (!zipUrl) return { mode: 'none', available: false };
+
+    const head = await headUrl(zipUrl).catch(() => null);
+    if (!head) return { mode: 'zip', available: false, url: zipUrl };
+
+    const remoteMeta = {
+        etag: head.headers['etag'] || null,
+        lastModified: head.headers['last-modified'] || null,
+        size: head.headers['content-length'] ? parseInt(head.headers['content-length'], 10) : null,
+        url: zipUrl
+    };
+
+    let previous = null;
+    try {
+        if (fs.existsSync(META_PATH)) previous = JSON.parse(fs.readFileSync(META_PATH, 'utf8'));
+    } catch (e) { previous = null; }
+
+    const available = !previous || previous.etag !== remoteMeta.etag || previous.lastModified !== remoteMeta.lastModified || previous.size !== remoteMeta.size;
+
+    // Save latest metadata for future checks
+    try { fs.writeFileSync(META_PATH, JSON.stringify(remoteMeta, null, 2)); } catch (e) {}
+
+    return { mode: 'zip', available, previous, remoteMeta };
+}
+
+// Attach checkUpdates to exported function
+updateCommand.checkUpdates = checkUpdates;
+
 module.exports = updateCommand;
 
 

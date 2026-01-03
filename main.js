@@ -123,6 +123,7 @@ const sudoCommand = require('./commands/sudo');
 // pies command removed
 const stickercropCommand = require('./commands/stickercrop');
 const updateCommand = require('./commands/update');
+const checkUpdatesCommand = require('./commands/checkupdates');
 const { igsCommand } = require('./commands/igs');
 const { anticallCommand, readState: readAnticallState } = require('./commands/anticall');
 const { pmblockerCommand, readState: readPmBlockerState } = require('./commands/pmblocker');
@@ -1211,6 +1212,12 @@ async function handleMessages(sock, messageUpdate, printLog) {
                     const parts = rawText.trim().split(/\s+/);
                     const zipArg = parts[1] && parts[1].startsWith('http') ? parts[1] : '';
                     await updateCommand(sock, chatId, message, zipArg);
+                }
+                commandExecuted = true;
+                break;
+            case userMessage.startsWith('.checkupdates'):
+                {
+                    await checkUpdatesCommand(sock, chatId, message);
                 }
                 commandExecuted = true;
                 break;
