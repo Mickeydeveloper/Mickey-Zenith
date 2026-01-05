@@ -253,6 +253,42 @@ async function headUrl(url, visited = new Set()) {
 
 const META_PATH = path.join(process.cwd(), 'data', 'update_meta.json');
 
+// Scan directory for files (relative paths, sizes)
+function scanDirRecursive(dir, ignore = [], relative = '', outList = []) {
+    for (const entry of fs.readdirSync(dir)) {
+        if (ignore.includes(entry)) continue;
+        const full = path.join(dir, entry);
+        const stat = fs.lstatSync(full);
+        const rel = path.join(relative, entry).replace(/\\/g, '/');
+        if (stat.isDirectory()) {
+            scanDirRecursive(full, ignore, rel, outList);
+        } else {
+            outList.push({ path: rel, size: stat.size });
+        }
+    }
+    return outList;
+}
+
+// Download and list files inside ZIP without applying update
+async function listZipContent(zipUrl) {
+    const tmpDir = path.join(process.cwd(), 'tmp');
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    const zipPath = path.join(tmpDir, `check_${Date.now()}.zip`);
+    const extractTo = path.join(tmpDir, `check_${Date.now()}_extract`);
+    try {
+        await downloadFile(zipUrl, zipPath);
+        await extractZip(zipPath, extractTo);
+        const entries = fs.readdirSync(extractTo).map(n => path.join(extractTo, n));
+        const root = entries.length === 1 && fs.lstatSync(entries[0]).isDirectory() ? entries[0] : extractTo;
+        const ignore = ['node_modules', '.git', 'session', 'tmp', 'temp', 'data', 'baileys_store.json'];
+        const files = scanDirRecursive(root, ignore, '');
+        return files;
+    } finally {
+        try { fs.rmSync(extractTo, { recursive: true, force: true }); } catch (e) {}
+        try { fs.rmSync(zipPath, { force: true }); } catch (e) {}
+    }
+}
+
 async function checkUpdates() {
     if (await hasGitRepo()) {
         await run('git fetch --all --prune');
@@ -288,10 +324,46 @@ async function checkUpdates() {
 
     const available = !previous || previous.etag !== remoteMeta.etag || previous.lastModified !== remoteMeta.lastModified || previous.size !== remoteMeta.size;
 
+    let zipFiles = null;
+    let changes = null;
+
+    if (available && previous) {
+        try {
+            zipFiles = await listZipContent(zipUrl);
+
+            // Scan current project files
+            const ignore = ['node_modules', '.git', 'session', 'tmp', 'temp', 'data', 'baileys_store.json'];
+            const currentFiles = scanDirRecursive(process.cwd(), ignore, '');
+
+            const zipMap = new Map(zipFiles.map(f => [f.path, f]));
+            const curMap = new Map(currentFiles.map(f => [f.path, f]));
+
+            const added = [];
+            const removed = [];
+            const modified = [];
+
+            for (const [p, f] of zipMap.entries()) {
+                if (!curMap.has(p)) added.push(p);
+                else {
+                    const cur = curMap.get(p);
+                    if (cur.size !== f.size) modified.push(p);
+                }
+            }
+
+            for (const [p, f] of curMap.entries()) {
+                if (!zipMap.has(p)) removed.push(p);
+            }
+
+            changes = { added, removed, modified };
+        } catch (e) {
+            console.error('Failed to inspect ZIP contents:', e);
+        }
+    }
+
     // Save latest metadata for future checks
     try { fs.writeFileSync(META_PATH, JSON.stringify(remoteMeta, null, 2)); } catch (e) {}
 
-    return { mode: 'zip', available, previous, remoteMeta };
+    return { mode: 'zip', available, previous, remoteMeta, zipFiles, changes };
 }
 
 // Attach checkUpdates to exported function

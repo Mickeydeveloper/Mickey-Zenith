@@ -40,6 +40,21 @@ async function checkUpdatesCommand(sock, chatId, message) {
                 if (prev.etag !== meta.etag) parts.push(`• ETag changed: ${prev.etag || 'none'} → ${meta.etag || 'none'}`);
                 if (prev.lastModified !== meta.lastModified) parts.push(`• Last-Modified: ${prev.lastModified || 'none'} → ${meta.lastModified || 'none'}`);
                 if (prev.size !== meta.size) parts.push(`• Size: ${prev.size || 'unknown'} → ${meta.size || 'unknown'} bytes`);
+
+                // File-level changes if available
+                if (res.changes) {
+                    const { added = [], removed = [], modified = [] } = res.changes;
+                    const total = (added.length || 0) + (removed.length || 0) + (modified.length || 0);
+                    parts.push(`• Files changed: ${total}  (Added: ${added.length}, Removed: ${removed.length}, Modified: ${modified.length})`);
+
+                    const maxShow = 60; // limit items shown per category
+                    if (added.length) parts.push(`\n+ Added (${added.length}):\n${added.slice(0, maxShow).join('\n')}${added.length > maxShow ? `\n...and ${added.length - maxShow} more` : ''}`);
+                    if (removed.length) parts.push(`\n- Removed (${removed.length}):\n${removed.slice(0, maxShow).join('\n')}${removed.length > maxShow ? `\n...and ${removed.length - maxShow} more` : ''}`);
+                    if (modified.length) parts.push(`\n~ Modified (${modified.length}):\n${modified.slice(0, maxShow).join('\n')}${modified.length > maxShow ? `\n...and ${modified.length - maxShow} more` : ''}`);
+                } else {
+                    parts.push('• File-level diff not available (could not inspect ZIP contents).');
+                }
+
                 await sock.sendMessage(chatId, { text: parts.join('\n') }, { quoted: message });
                 return;
             } else if (res.available && !prev) {
