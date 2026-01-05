@@ -170,7 +170,7 @@ async function handleAutoreply(sock, message) {
 
         if (DEBUG) console.log('[autoreply] Query:', userText);
 
-        const apiURL = 'https://api.hanggts.xyz/ai/chatgpt4o';
+        const apiURL = 'https://www.apis-codewave-unit-force.zone.id/api/chatsandbox?prompt=';
         let reply = '🤖 I’m here, please try again.';
 
         try {
