@@ -155,7 +155,7 @@ async function startXeonBotInc() {
                         newsletterName: channelRD.name,
                         serverMessageId: -1
                     };
-                    if (message.contextInfo.externalAdReply) delete message.contextInfo.externalAdReply;
+                    // Preserve externalAdReply so ad/previews set by commands (help, play, etc.) are not stripped
                 }
                 return origSendMessage(jid, message, options);
             };
