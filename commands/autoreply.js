@@ -1,13 +1,12 @@
 'use strict';
 
 /**
- * Fixed Autoreply Module
- * - API is confirmed working (tested live: returns {"status":true,"result":"..."})
- * - Improved extractReply: now strictly prioritizes data.result for this API
- * - Added strict response validation (status === true && result string)
- * - Better error logging: distinguishes network errors vs invalid API response
- * - Safer length check to prevent overly long replies
- * - Minor tweaks for reliability
+ * Updated Autoreply Module - Full Swahili Support
+ * - All bot replies and messages now in Swahili
+ * - Prompt fully in Swahili with character info
+ * - About Mickey: From Tanzania, lives in Dar es Salaam
+ * - Uses the same reliable API: https://www.apis-codewave-unit-force.zone.id/api/chatsandbox
+ * - Keeps rate-limiting, owner commands, private chats only
  */
 
 const fs = require('fs');
@@ -86,12 +85,10 @@ const RATE_LIMIT_MS = 3500;
 function extractReply(data) {
     if (!data) return null;
 
-    // This API reliably returns { status: true, result: "reply text" }
     if (data.status === true && data.result && typeof data.result === 'string') {
         return data.result.trim();
     }
 
-    // Gentle fallback (in case format changes slightly)
     const props = ['reply', 'response', 'text', 'message', 'content'];
     for (const p of props) {
         if (data[p] && typeof data[p] === 'string') return data[p].trim();
@@ -106,7 +103,7 @@ async function autoreplyCommand(sock, chatId, message) {
         const isOwner = await isOwnerOrSudo(senderId, sock, chatId);
 
         if (!message.key.fromMe && !isOwner) {
-            await sock.sendMessage(chatId, { text: '❌ Owner-only command.' }, { quoted: message }).catch(() => {});
+            await sock.sendMessage(chatId, { text: '❌ Amri ya mmiliki pekee.' }, { quoted: message }).catch(() => {});
             return;
         }
 
@@ -115,22 +112,22 @@ async function autoreplyCommand(sock, chatId, message) {
 
         if (!args.length) {
             const newState = cfg.toggle();
-            await sock.sendMessage(chatId, { text: `✅ Auto-Reply ${newState ? 'ENABLED' : 'DISABLED'}` }, { quoted: message });
+            await sock.sendMessage(chatId, { text: `✅ Jibu-Moza ${newState ? 'IMEWASHWA' : 'IMEZIMWA'}` }, { quoted: message });
             return;
         }
 
         const cmd = args[0].toLowerCase();
-        if (cmd === 'on') cfg.setEnabled(true);
-        else if (cmd === 'off') cfg.setEnabled(false);
-        else if (cmd === 'status') {
-            await sock.sendMessage(chatId, { text: `🤖 Auto-Reply Status: *${cfg.isEnabled() ? 'ON' : 'OFF'}*` }, { quoted: message });
+        if (cmd === 'on' || cmd === 'washo') cfg.setEnabled(true);
+        else if (cmd === 'off' || cmd === 'zima') cfg.setEnabled(false);
+        else if (cmd === 'status' || cmd === 'hali') {
+            await sock.sendMessage(chatId, { text: `🤖 Hali ya Jibu-Moza: *${cfg.isEnabled() ? 'IMEWASHWA' : 'IMEZIMWA'}*` }, { quoted: message });
             return;
         } else {
-            await sock.sendMessage(chatId, { text: '⚠️ Unknown subcommand. Use `on`, `off`, or `status`.' }, { quoted: message });
+            await sock.sendMessage(chatId, { text: '⚠️ Amri isiyojulikana. Tumia `on`, `off`, au `status`.' }, { quoted: message });
             return;
         }
 
-        await sock.sendMessage(chatId, { text: `✅ Auto-Reply ${cfg.isEnabled() ? 'ENABLED' : 'DISABLED'}` }, { quoted: message });
+        await sock.sendMessage(chatId, { text: `✅ Jibu-Moza ${cfg.isEnabled() ? 'IMEWASHWA' : 'IMEZIMWA'}` }, { quoted: message });
 
     } catch (err) {
         console.error('[autoreplyCommand]', err);
@@ -161,43 +158,50 @@ async function handleAutoreply(sock, message) {
         if (now - last < RATE_LIMIT_MS) return;
         recentUsers.set(userId, now);
 
-        if (DEBUG) console.log('[autoreply] User query:', userText);
+        if (DEBUG) console.log('[autoreply] Swali la mtumiaji:', userText);
 
         const baseURL = 'https://www.apis-codewave-unit-force.zone.id/api/chatsandbox';
-        let reply = '🤖 I’m here, please try again later.';
+        let reply = '🤖 Niko hapa, tafadhali jaribu tena baadaye.';
 
         try {
-            const prompt = `You are Mickey, a friendly and concise WhatsApp chatbot. Reply naturally and briefly.\nUser: ${userText}\nMickey:`;
+            // Full Swahili prompt with character details
+            const prompt = `Wewe ni Mickey, chatbot rafiki na mcheshi wa WhatsApp. 
+Unatoka Tanzania na unaishi Dar es Salaam. 
+Zungumza Kiswahili kizuri, kifupi na cha kirafiki kila wakati. 
+Usitumie Kiingereza isipokuwa mtumiaji anatumia.
+Jibu kwa ufupi tu, bila maelezo marefu.
+
+Mtumiaji: ${userText}
+Mickey:`;
 
             const res = await tryRequest(() =>
                 axios.get(`\( {baseURL}?prompt= \){encodeURIComponent(prompt)}`, AXIOS_DEFAULTS)
             );
 
-            if (DEBUG) console.log('[autoreply] Raw API response:', res?.data);
+            if (DEBUG) console.log('[autoreply] Jibu ghafi la API:', res?.data);
 
             const candidate = extractReply(res?.data);
 
             if (candidate && candidate.length > 0 && candidate.length < 1000) {
                 reply = candidate;
             } else {
-                console.warn('[autoreply] Invalid or empty result from API:', res?.data);
-                reply = '⚠️ Sorry, I didn\'t understand that. Try again!';
+                console.warn('[autoreply] Jibu batili au tupu kutoka API:', res?.data);
+                reply = 'Samahani, sikuelewa vizuri. Jaribu tena!';
             }
 
         } catch (apiErr) {
             if (apiErr.code === 'ECONNABORTED') {
-                console.error('[AI API Error] Timeout');
-                reply = '⚠️ AI is taking too long right now. Try again in a bit.';
+                reply = '⚠️ AI inachukua muda mrefu sasa. Jaribu tena baadaye.';
             } else if (apiErr.response) {
                 console.error('[AI API Error] HTTP', apiErr.response.status, apiErr.response.data);
-                reply = '⚠️ AI service error. Please try again soon.';
+                reply = '⚠️ Huduma ya AI ina tatizo. Jaribu tena hivi karibuni.';
             } else {
-                console.error('[AI API Error] Network/Unknown:', apiErr.message || apiErr);
-                reply = '⚠️ AI service is temporarily unavailable. Try again soon.';
+                console.error('[AI API Error] Mtandao/Hitilafu:', apiErr.message || apiErr);
+                reply = '⚠️ Huduma ya AI haipatikani kwa sasa. Jaribu tena baadaye.';
             }
         }
 
-        if (DEBUG) console.log('[autoreply] Final reply:', reply);
+        if (DEBUG) console.log('[autoreply] Jibu la mwisho:', reply);
 
         await sock.sendMessage(chatId, { text: reply }, { quoted: message }).catch(() => {});
 
