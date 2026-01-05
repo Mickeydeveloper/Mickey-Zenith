@@ -1,12 +1,13 @@
 'use strict';
 
 /**
- * Refactored Autoreply Module
- * - Uses https://www.apis-codewave-unit-force.zone.id/api/chatsandbox (no API key required)
- * - GET request with ?prompt= (as per your example)
- * - Response format: {"status":true,"result":"generated reply"}
- * - Keeps all original features: ConfigManager, rate-limiting, owner commands, private chats only
- * - Improved extractReply to handle the "result" field perfectly
+ * Fixed Autoreply Module
+ * - API is confirmed working (tested live: returns {"status":true,"result":"..."})
+ * - Improved extractReply: now strictly prioritizes data.result for this API
+ * - Added strict response validation (status === true && result string)
+ * - Better error logging: distinguishes network errors vs invalid API response
+ * - Safer length check to prevent overly long replies
+ * - Minor tweaks for reliability
  */
 
 const fs = require('fs');
@@ -15,7 +16,7 @@ const axios = require('axios');
 const isOwnerOrSudo = require('../lib/isOwner');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'data', 'autoreply.json');
-const DEBUG = false; // Set to true for verbose logs
+const DEBUG = false;
 
 const AXIOS_DEFAULTS = {
     timeout: 20000,
@@ -29,7 +30,7 @@ async function tryRequest(getter, attempts = 3) {
             return await getter();
         } catch (err) {
             lastErr = err;
-            if (i < attempts - 1) await new Promise(r => setTimeout(r, 600 * (i + 1)));
+            if (i < attempts - 1) await new Promise(r => setTimeout(r, 700 * (i + 1)));
         }
     }
     throw lastErr;
@@ -61,7 +62,7 @@ class ConfigManager {
     }
 
     isEnabled() {
-        this._data = this._read(); // Refresh in case of external changes
+        this._data = this._read();
         return !!this._data.enabled;
     }
 
@@ -79,34 +80,21 @@ class ConfigManager {
 
 const cfg = new ConfigManager(CONFIG_PATH);
 
-// Per-user rate limiting
 const recentUsers = new Map();
-const RATE_LIMIT_MS = 3500; // 3.5 seconds between replies per user
+const RATE_LIMIT_MS = 3500;
 
 function extractReply(data) {
     if (!data) return null;
 
-    // Primary: check for "result" field (this API uses it)
-    if (data.result && typeof data.result === 'string') {
+    // This API reliably returns { status: true, result: "reply text" }
+    if (data.status === true && data.result && typeof data.result === 'string') {
         return data.result.trim();
     }
 
-    // Fallbacks for other possible fields
-    const props = ['reply', 'response', 'text', 'message', 'content', 'answer'];
+    // Gentle fallback (in case format changes slightly)
+    const props = ['reply', 'response', 'text', 'message', 'content'];
     for (const p of props) {
-        if (data[p]) {
-            if (typeof data[p] === 'string') return data[p].trim();
-            if (typeof data[p] === 'object' && data[p].text) return data[p].text.trim();
-        }
-    }
-
-    // Deep search for any string
-    const stack = [data];
-    while (stack.length) {
-        const node = stack.shift();
-        if (typeof node === 'string' && node.trim()) return node.trim();
-        if (Array.isArray(node)) stack.push(...node);
-        if (node && typeof node === 'object') stack.push(...Object.values(node));
+        if (data[p] && typeof data[p] === 'string') return data[p].trim();
     }
 
     return null;
@@ -165,7 +153,7 @@ async function handleAutoreply(sock, message) {
             ''
         ).trim();
 
-        if (!userText || userText.startsWith('.')) return; // Ignore empty or bot commands
+        if (!userText || userText.startsWith('.')) return;
 
         const userId = message.key.participant || message.key.remoteJid;
         const now = Date.now();
@@ -185,16 +173,28 @@ async function handleAutoreply(sock, message) {
                 axios.get(`\( {baseURL}?prompt= \){encodeURIComponent(prompt)}`, AXIOS_DEFAULTS)
             );
 
-            const candidate = extractReply(res?.data);
-            if (candidate && candidate.length > 0 && candidate.length < 1500) {
-                reply = candidate;
-            }
-
             if (DEBUG) console.log('[autoreply] Raw API response:', res?.data);
 
+            const candidate = extractReply(res?.data);
+
+            if (candidate && candidate.length > 0 && candidate.length < 1000) {
+                reply = candidate;
+            } else {
+                console.warn('[autoreply] Invalid or empty result from API:', res?.data);
+                reply = '⚠️ Sorry, I didn\'t understand that. Try again!';
+            }
+
         } catch (apiErr) {
-            console.error('[AI API Error]', apiErr?.response?.data || apiErr.message || apiErr);
-            reply = '⚠️ AI service is temporarily unavailable. Try again soon.';
+            if (apiErr.code === 'ECONNABORTED') {
+                console.error('[AI API Error] Timeout');
+                reply = '⚠️ AI is taking too long right now. Try again in a bit.';
+            } else if (apiErr.response) {
+                console.error('[AI API Error] HTTP', apiErr.response.status, apiErr.response.data);
+                reply = '⚠️ AI service error. Please try again soon.';
+            } else {
+                console.error('[AI API Error] Network/Unknown:', apiErr.message || apiErr);
+                reply = '⚠️ AI service is temporarily unavailable. Try again soon.';
+            }
         }
 
         if (DEBUG) console.log('[autoreply] Final reply:', reply);
