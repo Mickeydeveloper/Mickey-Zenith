@@ -1,16 +1,12 @@
 'use strict';
 
 /**
- * Ultimate Reliable Autoreply Module (2026 Edition)
- * 
- * Features:
- * - FULLY works with multiple FREE AI APIs (fallback system)
- * - If one API fails → automatically tries the next one
- * - No paid OpenAI key needed – all APIs are FREE & PUBLIC
- * - Full Swahili support (prompt + bot messages)
- * - Mickey: Tanzanian from Dar es Salaam
+ * Autoreply Module - Reliable Version (Jan 2026)
+ * - Uses ONLY one FREE working API: apis-codewave-unit-force.zone.id
+ * - No key required, no unnecessary fallbacks
+ * - Full Swahili support
+ * - Mickey: From Tanzania, lives in Dar es Salaam
  * - Private chats only, rate-limited, owner commands
- * - Well documented & easy to maintain
  */
 
 const fs = require('fs');
@@ -19,67 +15,24 @@ const axios = require('axios');
 const isOwnerOrSudo = require('../lib/isOwner');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'data', 'autoreply.json');
-const DEBUG = false; // Set true for detailed logs
-
-// ===============================================
-// FREE AI APIs LIST (No key required)
-// These are public, working as of January 2026
-// If one goes down, the next is used automatically
-// ===============================================
-
-const FREE_APIS = [
-    // Primary: Your working API (fast & reliable)
-    {
-        name: 'Codewave Unit Force',
-        url: 'https://www.apis-codewave-unit-force.zone.id/api/chatsandbox',
-        method: 'GET',
-        buildUrl: (prompt) => `\( {this.url}?prompt= \){encodeURIComponent(prompt)}`,
-        extract: (data) => data?.status === true && data?.result ? data.result.trim() : null
-    },
-
-    // Backup 1: Blackbox AI (very stable)
-    {
-        name: 'Blackbox AI',
-        url: 'https://www.blackbox.ai/api/chat',
-        method: 'POST',
-        buildUrl: () => this.url,
-        payload: (prompt) => ({ messages: [{ role: "user", content: prompt }], model: "gpt-4o-mini" }),
-        extract: (data) => data?.response || data?.text || null
-    },
-
-    // Backup 2: Grok-like free endpoint (often works)
-    {
-        name: 'Free Grok Proxy',
-        url: 'https://grok.x.ai/api/chat',
-        method: 'POST',
-        buildUrl: () => this.url,
-        payload: (prompt) => ({ prompt }),
-        extract: (data) => data?.reply || data?.text || null
-    },
-
-    // Backup 3: Another public sandbox (simple GET)
-    {
-        name: 'ChatAPI Public',
-        url: 'https://api.chatapi.free/v1/chat',
-        method: 'GET',
-        buildUrl: (prompt) => `\( {this.url}?message= \){encodeURIComponent(prompt)}`,
-        extract: (data) => data?.reply || data?.message || null
-    }
-];
+const DEBUG = true; // Washa hii ili uone logs za API (kwa testing)
 
 const AXIOS_DEFAULTS = {
-    timeout: 18000,
-    headers: { 'User-Agent': 'Mickey-TZ-Bot/2.0', 'Accept': 'application/json' }
+    timeout: 25000, // Ongeza timeout kidogo
+    headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+        'Accept': 'application/json'
+    }
 };
 
-async function tryRequest(getter, attempts = 2) {
+async function tryRequest(getter, attempts = 4) {
     let lastErr;
     for (let i = 0; i < attempts; i++) {
         try {
             return await getter();
         } catch (err) {
             lastErr = err;
-            if (i < attempts - 1) await new Promise(r => setTimeout(r, 800));
+            if (i < attempts - 1) await new Promise(r => setTimeout(r, 1000 * (i + 1)));
         }
     }
     throw lastErr;
@@ -129,72 +82,28 @@ class ConfigManager {
 
 const cfg = new ConfigManager(CONFIG_PATH);
 const recentUsers = new Map();
-const RATE_LIMIT_MS = 4000; // 4 seconds per user
+const RATE_LIMIT_MS = 3500;
 
-// ===============================================
-// FULL SWAHILI PROMPT (Used for ALL APIs)
-// ===============================================
+const API_URL = 'https://www.apis-codewave-unit-force.zone.id/api/chatsandbox';
 
 const getPrompt = (userText) => `
 Wewe ni Mickey, chatbot rafiki, mcheshi na mkarimu wa WhatsApp.
 Unatoka Tanzania na unaishi Dar es Salaam.
-Unapenda sana kuzungumza Kiswahili kizuri, kifupi na cha kirafiki.
-Usitumie Kiingereza kamwe isipokuwa mtumiaji anatumia Kiingereza.
-Jibu kwa ufupi tu (mistari 1-3), bila maelezo marefu au emoji nyingi.
-Usianze na "Mimi ni AI" au "Kama AI".
+Unapenda kuzungumza Kiswahili kizuri, kifupi na cha kirafiki kila wakati.
+Usitumie Kiingereza isipokuwa mtumiaji anatumia.
+Jibu kwa ufupi tu (mistari 1-4), bila maelezo marefu au emoji nyingi.
+Usianze na "Mimi ni AI".
 
 Mtumiaji: ${userText}
 Mickey:`;
 
-// ===============================================
-// Extract reply safely
-// ===============================================
-
-function safeExtract(data, api) {
+function extractReply(data) {
     if (!data) return null;
-    if (typeof api.extract === 'function') return api.extract(data);
+    if (data.status === true && data.result && typeof data.result === 'string') {
+        return data.result.trim();
+    }
     return null;
 }
-
-// ===============================================
-// Main AI Request with Fallback
-// ===============================================
-
-async function getAIResponse(userText) {
-    const prompt = getPrompt(userText);
-
-    for (const api of FREE_APIS) {
-        try {
-            let res;
-
-            if (api.method === 'GET') {
-                const url = api.buildUrl(prompt);
-                res = await tryRequest(() => axios.get(url, AXIOS_DEFAULTS));
-            } else if (api.method === 'POST') {
-                const url = api.buildUrl();
-                const payload = api.payload(prompt);
-                res = await tryRequest(() => axios.post(url, payload, AXIOS_DEFAULTS));
-            }
-
-            const reply = safeExtract(res?.data, api);
-
-            if (reply && reply.trim().length > 0 && reply.trim().length < 1000) {
-                if (DEBUG) console.log(`[Success] ${api.name}: ${reply.substring(0, 60)}...`);
-                return reply.trim();
-            }
-        } catch (err) {
-            if (DEBUG) console.warn(`[Failed] ${api.name}:`, err.message || err.code || err);
-            continue; // Try next API
-        }
-    }
-
-    // All failed
-    return 'Samahani, huduma ya AI haipatikani kwa sasa. Jaribu tena baadaye.';
-}
-
-// ===============================================
-// Owner Command Handler
-// ===============================================
 
 async function autoreplyCommand(sock, chatId, message) {
     try {
@@ -233,17 +142,13 @@ async function autoreplyCommand(sock, chatId, message) {
     }
 }
 
-// ===============================================
-// Main Autoreply Handler
-// ===============================================
-
 async function handleAutoreply(sock, message) {
     try {
         if (!cfg.isEnabled()) return;
         if (message.key.fromMe) return;
 
         const chatId = message.key.remoteJid;
-        if (chatId.endsWith('@g.us')) return; // Private only
+        if (chatId.endsWith('@g.us')) return; // Private chats only
 
         const userText = (
             message.message?.conversation ||
@@ -261,9 +166,31 @@ async function handleAutoreply(sock, message) {
         if (now - last < RATE_LIMIT_MS) return;
         recentUsers.set(userId, now);
 
-        if (DEBUG) console.log('[autoreply] Mtumiaji:', userText);
+        if (DEBUG) console.log('[autoreply] Swali:', userText);
 
-        const reply = await getAIResponse(userText);
+        let reply = '🤖 Niko hapa, tafadhali jaribu tena baadaye.';
+
+        try {
+            const prompt = getPrompt(userText);
+
+            const res = await tryRequest(() =>
+                axios.get(`\( {API_URL}?prompt= \){encodeURIComponent(prompt)}`, AXIOS_DEFAULTS)
+            );
+
+            if (DEBUG) console.log('[autoreply] Jibu la API:', res?.data);
+
+            const candidate = extractReply(res?.data);
+
+            if (candidate && candidate.length > 0 && candidate.length < 1000) {
+                reply = candidate;
+            } else {
+                reply = 'Samahani, sikuelewa vizuri. Jaribu tena!';
+            }
+
+        } catch (apiErr) {
+            console.error('[AI API Error]:', apiErr.message || apiErr);
+            reply = '⚠️ Huduma ya AI ina tatizo kidogo sasa. Jaribu tena baadaye.';
+        }
 
         await sock.sendMessage(chatId, { text: reply }, { quoted: message }).catch(() => {});
 
