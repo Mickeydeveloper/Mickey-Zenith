@@ -98,8 +98,8 @@ async function helpCommand(sock, chatId, message) {
     const mode = settings.commandMode || 'public';
     const prefix = settings.prefix || '.';
     const timeNow = new Date().toLocaleTimeString('en-GB', { hour12: false });
-    const memUsedGB = (process.memoryUsage().rss / (1024 ** 3));
-    const memTotalGB = (os.totalmem() / (1024 ** 3));
+    const memUsedGB = (process.memoryUsage().rss / (1024 ** 3)).toFixed(2);
+    const memTotalGB = (os.totalmem() / (1024 ** 3)).toFixed(2);
 
     // Determine requesting user (best-effort) and resolve display name where possible
     let senderJid = null;
@@ -121,6 +121,7 @@ async function helpCommand(sock, chatId, message) {
         }
       }
     } catch (e) {}
+
     const cmdList = listCommandFiles();
     if (!cmdList.length) {
       await sock.sendMessage(chatId, { text: FALLBACK }, { quoted: message });
@@ -131,13 +132,14 @@ async function helpCommand(sock, chatId, message) {
       runtime,
       mode,
       prefix,
-      ramUsed: memUsedGB.toFixed(2),
-      ramTotal: memTotalGB.toFixed(2),
+      ramUsed: memUsedGB,
+      ramTotal: memTotalGB,
       time: timeNow,
       user: userId,
       name: displayName
     });
 
+    // Fixed externalAdReply – now shows properly with large thumbnail
     await sock.sendMessage(chatId, {
       text: helpText,
       contextInfo: {
@@ -148,15 +150,16 @@ async function helpCommand(sock, chatId, message) {
           thumbnailUrl: BANNER,
           sourceUrl: 'https://github.com/Mickeydeveloper/Mickey-Glitch',
           mediaType: 1,
-          showAdAttribution: false,
-          renderLargerThumbnail: true
+          mediaUrl: 'https://github.com/Mickeydeveloper/Mickey-Glitch', // Helps force preview in some Baileys forks
+          showAdAttribution: true,          // REQUIRED: Must be true to display the ad card
+          renderLargerThumbnail: true       // Large thumbnail
         }
       }
     }, { quoted: message });
 
   } catch (error) {
     console.error('helpCommand Error:', error);
-    await sock.sendMessage(chatId, { text: `*Error:* ${error.message}\n\n${FALLBACK}` }, { quoted: message });
+    await sock.sendMessage(chatId, { text: `*Error:* \( {error.message}\n\n \){FALLBACK}` }, { quoted: message });
   }
 }
 
