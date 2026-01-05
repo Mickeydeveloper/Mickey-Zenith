@@ -1,11 +1,12 @@
 'use strict';
 
 /**
- * Refactored Autoreply Command
- * - Uses a ConfigManager (sync for compatibility)
- * - Adds rate-limiting per user to avoid spam
- * - Uses AXIOS defaults and a simple retry helper
- * - Cleaner, modular code style
+ * Refactored Autoreply Module
+ * - Uses https://www.apis-codewave-unit-force.zone.id/api/chatsandbox (no API key required)
+ * - GET request with ?prompt= (as per your example)
+ * - Response format: {"status":true,"result":"generated reply"}
+ * - Keeps all original features: ConfigManager, rate-limiting, owner commands, private chats only
+ * - Improved extractReply to handle the "result" field perfectly
  */
 
 const fs = require('fs');
@@ -14,21 +15,21 @@ const axios = require('axios');
 const isOwnerOrSudo = require('../lib/isOwner');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'data', 'autoreply.json');
-const DEBUG = false; // set true for verbose logs
+const DEBUG = false; // Set to true for verbose logs
 
 const AXIOS_DEFAULTS = {
     timeout: 20000,
-    headers: { 'User-Agent': 'Mickey-Glitch-Bot/1.0', 'Accept': 'application/json, text/plain, */*' }
+    headers: { 'User-Agent': 'Mickey-Glitch-Bot/1.0', 'Accept': 'application/json' }
 };
 
-async function tryRequest(getter, attempts = 2) {
+async function tryRequest(getter, attempts = 3) {
     let lastErr;
     for (let i = 0; i < attempts; i++) {
         try {
             return await getter();
         } catch (err) {
             lastErr = err;
-            if (i < attempts - 1) await new Promise(r => setTimeout(r, 500 * (i + 1)));
+            if (i < attempts - 1) await new Promise(r => setTimeout(r, 600 * (i + 1)));
         }
     }
     throw lastErr;
@@ -60,7 +61,7 @@ class ConfigManager {
     }
 
     isEnabled() {
-        this._data = this._read(); // re-read for external changes
+        this._data = this._read(); // Refresh in case of external changes
         return !!this._data.enabled;
     }
 
@@ -78,36 +79,34 @@ class ConfigManager {
 
 const cfg = new ConfigManager(CONFIG_PATH);
 
-// Simple per-user rate limit map
+// Per-user rate limiting
 const recentUsers = new Map();
-const RATE_LIMIT_MS = 3500; // 3.5s between bot replies per user
+const RATE_LIMIT_MS = 3500; // 3.5 seconds between replies per user
 
 function extractReply(data) {
     if (!data) return null;
-    if (typeof data === 'string') return data;
 
-    const props = ['result', 'reply', 'response', 'text', 'message', 'content'];
+    // Primary: check for "result" field (this API uses it)
+    if (data.result && typeof data.result === 'string') {
+        return data.result.trim();
+    }
+
+    // Fallbacks for other possible fields
+    const props = ['reply', 'response', 'text', 'message', 'content', 'answer'];
     for (const p of props) {
         if (data[p]) {
-            if (typeof data[p] === 'string') return data[p];
-            if (typeof data[p] === 'object') {
-                if (data[p].text) return data[p].text;
-                if (data[p].reply) return data[p].reply;
-                if (data[p].content) return data[p].content;
-            }
+            if (typeof data[p] === 'string') return data[p].trim();
+            if (typeof data[p] === 'object' && data[p].text) return data[p].text.trim();
         }
     }
 
-    // Deep fallback: find the first string value
+    // Deep search for any string
     const stack = [data];
     while (stack.length) {
         const node = stack.shift();
-        if (!node) continue;
-        if (typeof node === 'string') return node;
-        if (Array.isArray(node)) { stack.push(...node); continue; }
-        if (typeof node === 'object') {
-            for (const v of Object.values(node)) stack.push(v);
-        }
+        if (typeof node === 'string' && node.trim()) return node.trim();
+        if (Array.isArray(node)) stack.push(...node);
+        if (node && typeof node === 'object') stack.push(...Object.values(node));
     }
 
     return null;
@@ -156,33 +155,50 @@ async function handleAutoreply(sock, message) {
         if (message.key.fromMe) return;
 
         const chatId = message.key.remoteJid;
-        if (chatId.endsWith('@g.us')) return; // only private chats
+        if (chatId.endsWith('@g.us')) return; // Private chats only
 
-        const userText = (message.message?.conversation || message.message?.extendedTextMessage?.text || message.message?.imageMessage?.caption || message.message?.videoMessage?.caption || '').trim();
-        if (!userText) return;
-        if (userText.startsWith('.')) return; // don't auto-reply to bot commands
+        const userText = (
+            message.message?.conversation ||
+            message.message?.extendedTextMessage?.text ||
+            message.message?.imageMessage?.caption ||
+            message.message?.videoMessage?.caption ||
+            ''
+        ).trim();
+
+        if (!userText || userText.startsWith('.')) return; // Ignore empty or bot commands
 
         const userId = message.key.participant || message.key.remoteJid;
-        const last = recentUsers.get(userId) || 0;
         const now = Date.now();
-        if (now - last < RATE_LIMIT_MS) return; // rate limited
+        const last = recentUsers.get(userId) || 0;
+        if (now - last < RATE_LIMIT_MS) return;
         recentUsers.set(userId, now);
 
-        if (DEBUG) console.log('[autoreply] Query:', userText);
+        if (DEBUG) console.log('[autoreply] User query:', userText);
 
-        const apiURL = 'https://www.apis-codewave-unit-force.zone.id/api/chatsandbox?prompt=';
-        let reply = '🤖 I’m here, please try again.';
+        const baseURL = 'https://www.apis-codewave-unit-force.zone.id/api/chatsandbox';
+        let reply = '🤖 I’m here, please try again later.';
 
         try {
-            const res = await tryRequest(() => axios.post(apiURL, { text: `You are Mickey, a friendly WhatsApp chatbot. Reply briefly and clearly.\nUser: ${userText}` }, AXIOS_DEFAULTS), 2);
+            const prompt = `You are Mickey, a friendly and concise WhatsApp chatbot. Reply naturally and briefly.\nUser: ${userText}\nMickey:`;
+
+            const res = await tryRequest(() =>
+                axios.get(`\( {baseURL}?prompt= \){encodeURIComponent(prompt)}`, AXIOS_DEFAULTS)
+            );
+
             const candidate = extractReply(res?.data);
-            if (candidate && candidate.trim()) reply = candidate.trim();
+            if (candidate && candidate.length > 0 && candidate.length < 1500) {
+                reply = candidate;
+            }
+
+            if (DEBUG) console.log('[autoreply] Raw API response:', res?.data);
+
         } catch (apiErr) {
-            console.error('[AI API Error]', apiErr && apiErr.message ? apiErr.message : apiErr);
-            reply = '⚠️ AI is busy, please try again shortly.';
+            console.error('[AI API Error]', apiErr?.response?.data || apiErr.message || apiErr);
+            reply = '⚠️ AI service is temporarily unavailable. Try again soon.';
         }
 
-        if (DEBUG) console.log('[autoreply] Reply:', reply);
+        if (DEBUG) console.log('[autoreply] Final reply:', reply);
+
         await sock.sendMessage(chatId, { text: reply }, { quoted: message }).catch(() => {});
 
     } catch (err) {
