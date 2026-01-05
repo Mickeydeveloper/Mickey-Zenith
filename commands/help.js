@@ -148,6 +148,7 @@ async function helpCommand(sock, chatId, message) {
           thumbnailUrl: BANNER,
           sourceUrl: 'https://github.com/Mickeydeveloper/Mickey-Glitch',
           mediaType: 1,
+          showAdAttribution: false,
           renderLargerThumbnail: true
         }
       }
