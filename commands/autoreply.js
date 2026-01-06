@@ -1,10 +1,13 @@
 'use strict';
 
 /**
- * Autoreply Module - Business Prompt Only (No API) - Jan 2026
- * - Ha tumii API yoyote kabisa
- * - Inafanya kazi kwa Kiswahili na Kiingereza kiotomatiki (detect language ya mtumiaji)
- * - Inabadilisha lugha ya majibu kulingana na lugha ya ujumbe
+ * Autoreply Module - Improved Business Prompt Only Version (Jan 2026)
+ * - NO API used
+ * - Rule-based responses with keyword matching
+ * - Auto-detects language (Swahili/English) and replies in the same language
+ * - First message detection: Special welcome + "nitakujibu haraka"
+ * - Follow-up messages: Reminds "Mickey amepata ujumbe wako, atajibu hivi karibuni"
+ * - More natural, varied responses
  * - Mickey: From Tanzania, lives in Dar es Salaam
  * - Private chats only, rate-limited, owner commands
  */
@@ -14,6 +17,11 @@ const path = require('path');
 const isOwnerOrSudo = require('../lib/isOwner');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'data', 'autoreply.json');
+
+// Store last interaction time per user to detect "first message of the day/session"
+const recentUsers = new Map(); // userId → last timestamp
+const RATE_LIMIT_MS = 3500;
+const FIRST_MESSAGE_THRESHOLD_HOURS = 6; // If no message in last 6 hours → treat as first message
 
 class ConfigManager {
     constructor(filePath) {
@@ -58,80 +66,100 @@ class ConfigManager {
 }
 
 const cfg = new ConfigManager(CONFIG_PATH);
-const recentUsers = new Map();
-const RATE_LIMIT_MS = 3500;
 
-// Simple language detector: checks common Swahili vs English words
-function detectLanguage(text) {
-    const lower = text.toLowerCase();
-    const swahiliWords = ['habari', 'mambo', 'poa', 'sawa', 'asante', 'karibu', 'ndio', 'hapana', 'kaka', 'dada', 'rafiki', 'tanzania', 'dar', 'salama', 'jambo', 'shikamoo'];
-    const englishWords = ['hello', 'hi', 'hey', 'how', 'what', 'where', 'good', 'thanks', 'thank', 'please', 'yes', 'no', 'brother', 'sister', 'friend'];
-
-    let swaCount = 0;
-    let engCount = 0;
-
-    swahiliWords.forEach(word => { if (lower.includes(word)) swaCount++; });
-    englishWords.forEach(word => { if (lower.includes(word)) engCount++; });
-
-    // If more Swahili words or text contains mostly Swahili indicators
-    if (swaCount > engCount || /[\u0100-\u017F]/.test(text)) {  // rough check for non-ASCII (common in Swahili names)
-        return 'swahili';
-    }
-    return 'english';
+// Simple Swahili detector
+function isSwahili(text) {
+    const swahiliIndicators = ['habari', 'mambo', 'salama', 'asante', 'karibu', 'ndio', 'hapana', 'sawa', 'poa', 'mzuri', 'jambo', 'shikamoo', 'tafadhali', 'kwaheri', 'lala', 'asubuhi', 'mchana', 'jioni'];
+    const lowerText = text.toLowerCase().replace(/[^a-z]/g, ' ');
+    return swahiliIndicators.some(word => lowerText.includes(word));
 }
 
-// Business-style prompt templates (no external AI, local generation)
-function generateReply(userText, language = 'swahili') {
-    const replies = {
-        swahili: {
-            greeting: ['Habari za mchana?', 'Mambo vipi rafiki?', 'Salamu za Dar es Salaam!', 'Habari yako?', 'Poa sana, wewe je?', 'Karibu sana!'],
-            howareyou: ['Mzima kabisa, asante!', 'Niko fiti, wewe?', 'Salama tu hapa Dar!', 'Niko poa, shukran kwa kuuliza.'],
-            wherefrom: ['Mimi ni Mickey, natoka Tanzania, naishi Dar es Salaam.', 'Tanzania mzima, Dar ndio home yangu!', 'Asili yangu Tanzania, currently Dar es Salaam.'],
-            thanks: ['Karibu sana!', 'Starehe yangu!', 'Asante kwa salamu!', 'Karibu tena!'],
-            goodbye: ['Kwa heri rafiki!', 'Tutaonana tena!', 'Usiku mwema!', 'Kaa poa!'],
-            default: ['Samahani sikukuelewa vizuri, unaweza kurudia?', 'Sawa, nimekusikia.', 'Habari nyingine?', 'Niko hapa kukuandikia tu!']
-        },
-        english: {
-            greeting: ['Hey there!', 'How are you doing?', 'Hello from Dar es Salaam!', 'Hi friend!', 'What\'s up?', 'Hey, good to hear from you!'],
-            howareyou: ['I\'m doing great, thanks!', 'All good here in Dar!', 'Feeling awesome, how about you?', 'I\'m fine, thank you.'],
-            wherefrom: ['I\'m Mickey from Tanzania, living in Dar es Salaam.', 'Born in Tanzania, home is Dar es Salaam!', 'Tanzanian through and through, based in Dar.'],
-            thanks: ['You\'re welcome!', 'My pleasure!', 'Anytime!', 'Glad to help!'],
-            goodbye: ['Take care!', 'See you soon!', 'Have a great day!', 'Bye for now!'],
-            default: ['Sorry, I didn\'t quite get that. Can you repeat?', 'Got it!', 'Anything else?', 'I\'m here if you need me!']
-        }
-    };
+// Response database
+const RESPONSES = {
+    swahili: {
+        firstMessage: [
+            'Habari! Karibu sana 🇹🇿\nMimi ni Mickey, rafiki yako kutoka Dar es Salaam.\nNimepokea ujumbe wako, nitakujibu haraka iwezekanavyo!',
+            'Jambo rafiki! 🎉\nMickey hapa, niko Dar es Salaam. Nimeona sms yako, nitakureply hivi karibuni!',
+            'Mambo! 😊\nMickey amepokea ujumbe wako. Niko hapa, nitakujibu kadri niwezavyo haraka!'
+        ],
+        followUpReminder: [
+            'Mickey amepata ujumbe wako, atajibu haraka iwezekanavyo. Subiri kidogo rafiki! ⏳',
+            'Nimeona sms yako mpya. Mickey atakuandikia hivi punde! 😊',
+            'Ujumbe umefika salama. Mickey atareply soon!'
+        ],
+        greetings: ['Habari yako?', 'Mambo vipi?', 'Jambo!', 'Salama?', 'Poa?'],
+        howareyou: ['Mzima kabisa, asante! Na wewe je?', 'Poa sana! Habari zako?', 'Salama tu, asante kwa kuuliza!'],
+        fine: ['Sawa basi!', 'Vizuri!', 'Poa tu!'],
+        tanzania: ['Ninatoka Tanzania, naishi Dar es Salaam! 🇹🇿 Unatoka wapi wewe?', 'Dar ndio home! Unapenda Tz?'],
+        love: ['Aww, nakupenda pia! ❤️', 'Asante sana rafiki! 😘'],
+        thanks: ['Karibu sana!', 'Starehe yako!', 'Karibu tena!'],
+        bye: ['Kwaheri, tuonane tena!', 'Lala salama!', 'Baadaye!'],
+        default: ['Samahani, sikuelewa vizuri. Unaweza kurudia?', 'Sema zaidi nifahamu!', 'Niko hapa, endelea tu!']
+    },
+    english: {
+        firstMessage: [
+            'Hey there! Welcome 🇹🇿\nI\'m Mickey, your friend from Dar es Salaam.\nI\'ve received your message and will reply as soon as possible!',
+            'Hi! 🎉\nMickey here from Dar es Salaam. Got your text, I\'ll get back to you soon!',
+            'Hello friend! 😊\nMickey has seen your message. I\'ll respond quickly!'
+        ],
+        followUpReminder: [
+            'Mickey has received your message and will reply as soon as he can. Hang on! ⏳',
+            'I saw your new text. Mickey will reply shortly! 😊',
+            'Message received safely. Mickey will get back to you soon!'
+        ],
+        greetings: ['Hey!', 'What\'s up?', 'Hi there!', 'Hello!'],
+        howareyou: ['I\'m great, thanks! How about you?', 'Doing awesome! And you?', 'All good here!'],
+        fine: ['Cool!', 'Nice!', 'Great!'],
+        tanzania: ['I\'m from Tanzania, living in Dar es Salaam! 🇹🇿 Where are you from?', 'Dar is home! Do you like TZ?'],
+        love: ['Aww, I love you too! ❤️', 'Thanks friend! 😘'],
+        thanks: ['You\'re welcome!', 'Anytime!', 'Welcome!'],
+        bye: ['Bye, talk soon!', 'Good night!', 'Later!'],
+        default: ['Sorry, didn\'t catch that. Can you say it again?', 'Tell me more!', 'I\'m here, keep going!']
+    }
+};
 
+function getReply(userText, isSw, isFirstMessage, isFollowUp) {
     const lower = userText.toLowerCase();
-    const dict = replies[language];
+    const res = isSw ? RESPONSES.swahili : RESPONSES.english;
 
-    if (lower.includes('habari') || lower.includes('mambo') || lower.includes('jambo') || lower.includes('salamu') || 
-        lower.includes('hi') || lower.includes('hello') || lower.includes('hey')) {
-        return dict.greeting[Math.floor(Math.random() * dict.greeting.length)];
+    // Priority 1: First message of the session
+    if (isFirstMessage) {
+        return res.firstMessage[Math.floor(Math.random() * res.firstMessage.length)];
     }
 
-    if (lower.includes('vzuri') || lower.includes('poa') || lower.includes('fiti') || lower.includes('mzima') ||
-        lower.includes('how are you') || lower.includes('how you') || lower.includes('doing')) {
-        return dict.howareyou[Math.floor(Math.random() * dict.howareyou.length)];
+    // Priority 2: Follow-up reminder (every message after first, if within short time)
+    if (isFollowUp) {
+        return res.followUpReminder[Math.floor(Math.random() * res.followUpReminder.length)];
     }
 
-    if (lower.includes('unatoka') || lower.includes('unaishi') || lower.includes('tanzania') || lower.includes('dar') ||
-        lower.includes('where') || lower.includes('from') || lower.includes('live') || lower.includes('tanzania')) {
-        return dict.wherefrom[Math.floor(Math.random() * dict.wherefrom.length)];
+    // Normal conversation responses
+    if (lower.match(/(habari|jambo|mambo|salama|shikamoo|hi|hello|hey|sup)/)) {
+        return res.greetings[Math.floor(Math.random() * res.greetings.length)];
+    }
+    if (lower.match(/(je|vipi|how are you|habari yako|unzima)/)) {
+        return res.howareyou[Math.floor(Math.random() * res.howareyou.length)];
+    }
+    if (lower.match(/(mzima|poa|sawa|fine|good|great|okay)/)) {
+        return res.fine[Math.floor(Math.random() * res.fine.length)];
+    }
+    if (lower.match(/(tanzania|dar es salaam|tz|dar|wapi unatoka|where from)/)) {
+        return res.tanzania[Math.floor(Math.random() * res.tanzania.length)];
+    }
+    if (lower.match(/(nakupenda|love you|i love you|❤️)/)) {
+        return res.love[Math.floor(Math.random() * res.love.length)];
+    }
+    if (lower.match(/(asante|thanks|thank you|shukran)/)) {
+        return res.thanks[Math.floor(Math.random() * res.thanks.length)];
+    }
+    if (lower.match(/(kwaheri|bye|goodbye|good night|lala|baadaye)/)) {
+        return res.bye[Math.floor(Math.random() * res.bye.length)];
     }
 
-    if (lower.includes('asante') || lower.includes('shukran') || lower.includes('thank')) {
-        return dict.thanks[Math.floor(Math.random() * dict.thanks.length)];
-    }
-
-    if (lower.includes('kwa heri') || lower.includes('bye') || lower.includes('goodbye') || lower.includes('lala')) {
-        return dict.goodbye[Math.floor(Math.random() * dict.goodbye.length)];
-    }
-
-    // Default fallback
-    return dict.default[Math.floor(Math.random() * dict.default.length)];
+    return res.default[Math.floor(Math.random() * res.default.length)];
 }
 
 async function autoreplyCommand(sock, chatId, message) {
+    // (Same as before - no changes needed here)
     try {
         const senderId = message.key.participant || message.key.remoteJid;
         const isOwner = await isOwnerOrSudo(senderId, sock, chatId);
@@ -188,15 +216,21 @@ async function handleAutoreply(sock, message) {
 
         const userId = message.key.participant || message.key.remoteJid;
         const now = Date.now();
-        const last = recentUsers.get(userId) || 0;
-        if (now - last < RATE_LIMIT_MS) return;
+        const lastTime = recentUsers.get(userId) || 0;
+
+        // Rate limit
+        if (now - lastTime < RATE_LIMIT_MS) return;
+
+        // Detect first message (no contact in last 6 hours)
+        const hoursSinceLast = (now - lastTime) / (1000 * 60 * 60);
+        const isFirstMessage = hoursSinceLast >= FIRST_MESSAGE_THRESHOLD_HOURS || lastTime === 0;
+        const isFollowUp = !isFirstMessage && hoursSinceLast < 2; // Within 2 hours → reminder style
+
+        // Update timestamp
         recentUsers.set(userId, now);
 
-        console.log('[autoreply] Ujumbe:', userText);
-
-        // Detect language and generate reply locally
-        const language = detectLanguage(userText);
-        const reply = generateReply(userText, language);
+        const langIsSwahili = isSwahili(userText);
+        const reply = getReply(userText, langIsSwahili, isFirstMessage, isFollowUp);
 
         await sock.sendMessage(chatId, { text: reply }, { quoted: message }).catch(() => {});
 
