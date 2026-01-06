@@ -86,7 +86,7 @@ const blurCommand = require('./commands/img-blur');
 const { handleAntiBadwordCommand, handleBadwordDetection } = require('./lib/antibadword');
 const antibadwordCommand = require('./commands/antibadword');
 
-const antileftCommand = require('./commands/antileft');
+// antileft command removed
 
 const takeCommand = require('./commands/take');
 // flirt command removed
@@ -751,23 +751,8 @@ async function handleMessages(sock, messageUpdate, printLog) {
                 }
                 await handleAntitagCommand(sock, chatId, userMessage, senderId, isSenderAdmin, message);
                 break;
-            case userMessage.startsWith('.antileft'):
-                if (!isGroup) {
-                    await sock.sendMessage(chatId, { text: 'This command can only be used in groups.' }, { quoted: message });
-                    return;
-                }
+            // .antileft command removed
 
-                const antileftAdminStatus = await isAdmin(sock, chatId, senderId);
-                isSenderAdmin = antileftAdminStatus.isSenderAdmin;
-                isBotAdmin = antileftAdminStatus.isBotAdmin;
-
-                if (!isBotAdmin) {
-                    await sock.sendMessage(chatId, { text: '*Bot must be admin to use this feature*' }, { quoted: message });
-                    return;
-                }
-
-                await antileftCommand(sock, chatId, userMessage, senderId, isSenderAdmin, message);
-                break;
             // .joke command removed
             // .quote command removed
             // .fact command removed
@@ -1323,33 +1308,8 @@ async function handleGroupParticipantUpdate(sock, update) {
             // previously: await handleJoinEvent(sock, id, participants);
         }
 
-        // Handle leave events - Antileft: re-add members who left when enabled
-        if (action === 'remove') {
-            try {
-                const { getAntileft } = require('./lib/index');
-                for (const participant of participants) {
-                    try {
-                        const cfg = await getAntileft(id, 'on');
-                        if (!cfg || !cfg.enabled) continue;
+        // Antileft leave-event handling removed
 
-                        // Check bot admin status before attempting to add
-                        const botAdminCheck = await isAdmin(sock, id, sock.user?.id || '');
-                        if (!botAdminCheck.isBotAdmin) {
-                            console.log(`Antileft enabled but bot is not admin in ${id}`);
-                            continue;
-                        }
-
-                        // Re-add the participant immediately
-                        await sock.groupParticipantsUpdate(id, [participant], 'add');
-                        console.log(`Antileft: re-added ${participant} to ${id}`);
-                    } catch (e) {
-                        console.error('Antileft re-add error for participant', participant, e);
-                    }
-                }
-            } catch (e) {
-                console.error('Error handling antileft on remove event:', e);
-            }
-        }
     } catch (error) {
         console.error('Error in handleGroupParticipantUpdate:', error);
     }
