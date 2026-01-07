@@ -1,7 +1,6 @@
 const axios = require('axios');
 const yts = require('yt-search');
 
-
 const AXIOS_DEFAULTS = {
     timeout: 60000,
     headers: {
@@ -25,55 +24,61 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-
+/**
+ * Helper to extract the best download link from various API response shapes
+ */
+function extractBestVideo(data) {
+    // Check for array of results (often contains different formats/qualities)
+    if (data.results && Array.isArray(data.results)) {
+        return data.results[0]; // Usually highest quality is first
+    }
+    // Handle Izumi/Vreden standard response
+    if (data.url) return { url: data.url, type: 'video/mp4' };
+    // Handle Okatsu response
+    if (data.result?.mp4) return { url: data.result.mp4, type: 'video/mp4' };
+    if (data.result?.url) return { url: data.result.url, type: 'video/mp4' };
+    
+    return null;
+}
 
 async function getIzumiVideoByUrl(youtubeUrl) {
     const apiUrl = `https://api.izumi.my.id/api/download/video?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-    if (res?.data?.url) {
-        return { download: res.data.url, title: res.data.title || 'Video' };
-    }
-    throw new Error('Izumi API returned no download URL');
+    const best = extractBestVideo(res.data);
+    if (best) return { download: best.url, title: res.data.title || 'Video', mime: best.type || 'video/mp4' };
+    throw new Error('Izumi API failed');
 }
 
-async function getOkatsuVideoByUrl(youtubeUrl) {
+async function getVredenVideoByUrl(youtubeUrl) {
+    // Vreden usually supports multiple formats
     const apiUrl = `https://api.vreden.my.id/api/v1/download/play/video?query=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-    // shape: { status, creator, url, result: { status, title, mp4 } }
-    if (res?.data?.result?.mp4) {
-        return { download: res.data.result.mp4, title: res.data.result.title };
+    const result = res.data.result;
+    // Check for high res first, fallback to standard mp4
+    const downloadUrl = result.video_hd || result.video_sd || result.mp4;
+    if (downloadUrl) {
+        return { download: downloadUrl, title: result.title, mime: 'video/mp4' };
     }
-    throw new Error('Okatsu ytmp4 returned no mp4');
-}
-
-async function getYoutubeAPIVideoByUrl(youtubeUrl) {
-    const apiUrl = `https://youtube-api.vercel.app/api/video?url=${encodeURIComponent(youtubeUrl)}`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-    if (res?.data?.download?.url) {
-        return { download: res.data.download.url, title: res.data.title || 'Video' };
-    }
-    throw new Error('YouTube API returned no download URL');
+    throw new Error('Vreden API failed');
 }
 
 async function videoCommand(sock, chatId, message) {
     try {
         const text = message.message?.conversation || message.message?.extendedTextMessage?.text;
         const searchQuery = text.split(' ').slice(1).join(' ').trim();
-        
-        
+
         if (!searchQuery) {
             await sock.sendMessage(chatId, { text: 'What video do you want to download?' }, { quoted: message });
             return;
         }
 
-        // Determine if input is a YouTube link
         let videoUrl = '';
         let videoTitle = '';
         let videoThumbnail = '';
-        if (searchQuery.startsWith('http://') || searchQuery.startsWith('https://')) {
+
+        if (/^https?:\/\//.test(searchQuery)) {
             videoUrl = searchQuery;
         } else {
-            // Search YouTube for the video
             const { videos } = await yts(searchQuery);
             if (!videos || videos.length === 0) {
                 await sock.sendMessage(chatId, { text: 'No videos found!' }, { quoted: message });
@@ -84,65 +89,46 @@ async function videoCommand(sock, chatId, message) {
             videoThumbnail = videos[0].thumbnail;
         }
 
-        // Send thumbnail immediately
-        try {
-            const ytId = (videoUrl.match(/(?:youtu\.be\/|v=)([a-zA-Z0-9_-]{11})/) || [])[1];
-            const thumb = videoThumbnail || (ytId ? `https://i.ytimg.com/vi/${ytId}/sddefault.jpg` : undefined);
-            const captionTitle = videoTitle || searchQuery;
-            if (thumb) {
-                await sock.sendMessage(chatId, {
-                    image: { url: thumb },
-                    caption: `*${captionTitle}*\nDownloading...`
-                }, { quoted: message });
-            }
-        } catch (e) { console.error('[VIDEO] thumb error:', e?.message || e); }
+        // Send Processing Notification with Thumbnail
+        const ytId = (videoUrl.match(/(?:youtu\.be\/|v=)([a-zA-Z0-9_-]{11})/) || [])[1];
+        const thumb = videoThumbnail || (ytId ? `https://i.ytimg.com/vi/${ytId}/maxresdefault.jpg` : undefined);
         
+        await sock.sendMessage(chatId, {
+            image: { url: thumb },
+            caption: `*Mickey Tanzanite Era* 💎\n\n*Title:* ${videoTitle || 'Searching...'}\n*Status:* Fetching best quality...`
+        }, { quoted: message });
 
-        // Validate YouTube URL
-        let urls = videoUrl.match(/(?:https?:\/\/)?(?:youtu\.be\/|(?:www\.|m\.)?youtube\.com\/(?:watch\?v=|v\/|embed\/|shorts\/|playlist\?list=)?)([a-zA-Z0-9_-]{11})/gi);
-        if (!urls) {
-            await sock.sendMessage(chatId, { text: 'This is not a valid YouTube link!' }, { quoted: message });
-            return;
-        }
-
-        // Get video: try multiple APIs with fallback
+        // API Fallback Chain
         let videoData;
         const apiAttempts = [
             { fn: () => getIzumiVideoByUrl(videoUrl), name: 'Izumi' },
-            { fn: () => getYoutubeAPIVideoByUrl(videoUrl), name: 'YouTube API' },
-            { fn: () => getOkatsuVideoByUrl(videoUrl), name: 'Okatsu' }
+            { fn: () => getVredenVideoByUrl(videoUrl), name: 'Vreden/Okatsu' }
         ];
-        
-        let lastError;
+
         for (const attempt of apiAttempts) {
             try {
-                console.log(`[VIDEO] Attempting download with ${attempt.name}...`);
                 videoData = await attempt.fn();
-                console.log(`[VIDEO] Successfully downloaded with ${attempt.name}`);
-                break;
+                if (videoData) break;
             } catch (err) {
-                lastError = err;
-                console.warn(`[VIDEO] ${attempt.name} failed:`, err?.message || err);
+                console.warn(`[VIDEO] ${attempt.name} failed`);
             }
         }
-        
-        if (!videoData) {
-            throw new Error(`All download APIs failed. Last error: ${lastError?.message || 'Unknown'}`);
-        }
 
-        // Send video directly using the download URL
+        if (!videoData) throw new Error("Could not fetch video from any source.");
+
+        // Send the Video
+        // The dynamic 'mimetype' ensures if the API returns a WebM or MKV, it still sends.
         await sock.sendMessage(chatId, {
             video: { url: videoData.download },
-            mimetype: 'video/mp4',
-            fileName: `${videoData.title || videoTitle || 'video'}.mp4`,
-            caption: `*${videoData.title || videoTitle || 'Video'}*\n\n> *_Downloaded from Mickey Database_*`
+            mimetype: videoData.mime || 'video/mp4',
+            fileName: `${videoData.title}.mp4`,
+            caption: `*${videoData.title}*\n\n> *Mickey Tanzanite Era* 💎`
         }, { quoted: message });
 
-
     } catch (error) {
-        console.error('[VIDEO] Command Error:', error?.message || error);
-        await sock.sendMessage(chatId, { text: 'Download failed: ' + (error?.message || 'Unknown error') }, { quoted: message });
+        console.error('[VIDEO] Error:', error.message);
+        await sock.sendMessage(chatId, { text: '❌ Error: ' + error.message }, { quoted: message });
     }
 }
 
-module.exports = videoCommand; 
+module.exports = videoCommand;
