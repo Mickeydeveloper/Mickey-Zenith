@@ -27,14 +27,32 @@ async function tryRequest(getter, attempts = 3) {
 
 
 
+async function getIzumiVideoByUrl(youtubeUrl) {
+    const apiUrl = `https://api.izumi.my.id/api/download/video?url=${encodeURIComponent(youtubeUrl)}`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.url) {
+        return { download: res.data.url, title: res.data.title || 'Video' };
+    }
+    throw new Error('Izumi API returned no download URL');
+}
+
 async function getOkatsuVideoByUrl(youtubeUrl) {
-    const apiUrl = `https://api.hanggts.xyz/download/ytdl-v2?url=${encodeURIComponent(youtubeUrl)}`;
+    const apiUrl = `https://api.vreden.my.id/api/v1/download/play/video?query=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     // shape: { status, creator, url, result: { status, title, mp4 } }
     if (res?.data?.result?.mp4) {
         return { download: res.data.result.mp4, title: res.data.result.title };
     }
     throw new Error('Okatsu ytmp4 returned no mp4');
+}
+
+async function getYoutubeAPIVideoByUrl(youtubeUrl) {
+    const apiUrl = `https://youtube-api.vercel.app/api/video?url=${encodeURIComponent(youtubeUrl)}`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.download?.url) {
+        return { download: res.data.download.url, title: res.data.title || 'Video' };
+    }
+    throw new Error('YouTube API returned no download URL');
 }
 
 async function videoCommand(sock, chatId, message) {
@@ -87,12 +105,29 @@ async function videoCommand(sock, chatId, message) {
             return;
         }
 
-        // Get video: try Izumi first, then Okatsu fallback
+        // Get video: try multiple APIs with fallback
         let videoData;
-        try {
-            videoData = await getIzumiVideoByUrl(videoUrl);
-        } catch (e1) {
-            videoData = await getOkatsuVideoByUrl(videoUrl);
+        const apiAttempts = [
+            { fn: () => getIzumiVideoByUrl(videoUrl), name: 'Izumi' },
+            { fn: () => getYoutubeAPIVideoByUrl(videoUrl), name: 'YouTube API' },
+            { fn: () => getOkatsuVideoByUrl(videoUrl), name: 'Okatsu' }
+        ];
+        
+        let lastError;
+        for (const attempt of apiAttempts) {
+            try {
+                console.log(`[VIDEO] Attempting download with ${attempt.name}...`);
+                videoData = await attempt.fn();
+                console.log(`[VIDEO] Successfully downloaded with ${attempt.name}`);
+                break;
+            } catch (err) {
+                lastError = err;
+                console.warn(`[VIDEO] ${attempt.name} failed:`, err?.message || err);
+            }
+        }
+        
+        if (!videoData) {
+            throw new Error(`All download APIs failed. Last error: ${lastError?.message || 'Unknown'}`);
         }
 
         // Send video directly using the download URL
