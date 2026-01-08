@@ -2,8 +2,8 @@
 
 /**
  * Mickey Smart AI Autoreply (Fixed & Optimized)
+ * - Fixed: Owner detection logic
  * - Uses API with Identity Prompting
- * - Proper error handling for missing functions
  */
 
 const fs = require('fs');
@@ -55,22 +55,20 @@ const cfg = new ConfigManager(CONFIG_PATH);
  * Detect Language (Swahili vs English)
  */
 function getLanguage(text) {
-    const swahiliWords = ['mambo', 'vipi', 'habari', 'safi', 'mzima', 'asante', 'jambo'];
+    const swahiliWords = ['mambo', 'vipi', 'habari', 'safi', 'mzima', 'asante', 'jambo', 'mambo vipi'];
     const lowerText = text.toLowerCase();
     return swahiliWords.some(word => lowerText.includes(word)) ? 'sw' : 'en';
 }
 
 /**
- * Function to call the API using the Prompt Name "Mickey"
+ * Call Mickey AI API
  */
 async function askMickeyAI(userText, lang) {
     return new Promise((resolve) => {
-        // We inject the identity (Mickey) directly into the prompt
         const systemPrompt = `Your name is ${BOT_NAME}. You are a helpful, cool, and friendly person. 
         Reply in ${lang === 'sw' ? 'Swahili' : 'English'}. Keep it short and human-like.`;
-        
+
         const fullPrompt = `${systemPrompt}\nUser: ${userText}\n${BOT_NAME}:`;
-        
         const url = `https://okatsu-rolezapiiz.vercel.app/ai/ask?q=${encodeURIComponent(fullPrompt)}`;
 
         const req = https.get(url, { timeout: 8000 }, (res) => {
@@ -88,12 +86,15 @@ async function askMickeyAI(userText, lang) {
     });
 }
 
+/**
+ * Handles the actual autoreply logic
+ */
 async function handleAutoreply(sock, message) {
     try {
         if (!cfg.isEnabled() || message.key.fromMe) return;
 
         const chatId = message.key.remoteJid;
-        // Ensure it's a private chat
+        // Only trigger in Private Chats
         if (!chatId.endsWith('@s.whatsapp.net')) return;
 
         const userText = (
@@ -102,27 +103,20 @@ async function handleAutoreply(sock, message) {
             message.message?.imageMessage?.caption || ''
         ).trim();
 
-        // Ignore commands or empty messages
         if (!userText || userText.startsWith('.') || userText.startsWith('!')) return;
 
         const now = Date.now();
         const state = userStates.get(chatId) || { lastTime: 0 };
-
-        // Rate Limit check
         if (now - state.lastTime < RATE_LIMIT_MS) return;
 
-        // Show "typing..."
         await sock.sendPresenceUpdate('composing', chatId);
 
         const lang = getLanguage(userText);
         const aiReply = await askMickeyAI(userText, lang);
 
-        // Final Response
         const responseText = aiReply || (lang === 'sw' ? `Nimekupata, ${BOT_NAME} atajibu hivi punde.` : `Got it, ${BOT_NAME} will reply shortly.`);
 
         await sock.sendMessage(chatId, { text: responseText }, { quoted: message });
-
-        // Update state
         userStates.set(chatId, { lastTime: now });
 
     } catch (err) {
@@ -130,28 +124,37 @@ async function handleAutoreply(sock, message) {
     }
 }
 
+/**
+ * Command to Turn On/Off (Owner Only)
+ */
 async function autoreplyCommand(sock, chatId, message) {
     try {
-        const senderId = message.key.participant || message.key.remoteJid;
-        const isOwner = await isOwnerOrSudo(senderId, sock, chatId);
+        // FIX: Reliable sender identification
+        const sender = message.key.participant || message.key.remoteJid;
         
+        // Check permissions
+        const isOwner = await isOwnerOrSudo(sender, sock, chatId);
+
         if (!isOwner) {
-            return await sock.sendMessage(chatId, { text: '❌ Only the owner can use this.' }, { quoted: message });
+            return await sock.sendMessage(chatId, { 
+                text: '❌ *Access Denied*\nOnly the bot owner can configure Mickey Autoreply.' 
+            }, { quoted: message });
         }
 
         const text = (message.message?.conversation || message.message?.extendedTextMessage?.text || '').toLowerCase();
-        const args = text.split(/\s+/);
-
-        if (args.includes('on')) {
+        
+        if (text.includes('on')) {
             cfg.setEnabled(true);
-        } else if (args.includes('off')) {
+        } else if (text.includes('off')) {
             cfg.setEnabled(false);
         } else {
             cfg.toggle();
         }
 
-        const status = cfg.isEnabled() ? 'ON ✅' : 'OFF ❌';
-        await sock.sendMessage(chatId, { text: `Autoreply status: ${status}` }, { quoted: message });
+        const status = cfg.isEnabled() ? 'ENABLED ✅' : 'DISABLED ❌';
+        await sock.sendMessage(chatId, { 
+            text: `*Mickey Smart AI*\nStatus: ${status}\n\nUse "on" or "off" to control.` 
+        }, { quoted: message });
 
     } catch (err) {
         console.error('[Command Error]', err);
