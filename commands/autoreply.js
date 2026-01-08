@@ -1,15 +1,14 @@
 'use strict';
 
 /**
- * Mickey Smart AI Autoreply (Fixed & Optimized)
- * - Fixed: Owner detection logic
+ * Mickey Smart AI Autoreply (Public Access)
+ * - Fixed: Anyone can use the "on/off" command
  * - Uses API with Identity Prompting
  */
 
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
-const isOwnerOrSudo = require('../lib/isOwner');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'data', 'autoreply.json');
 const BOT_NAME = "Mickey"; 
@@ -94,7 +93,6 @@ async function handleAutoreply(sock, message) {
         if (!cfg.isEnabled() || message.key.fromMe) return;
 
         const chatId = message.key.remoteJid;
-        // Only trigger in Private Chats
         if (!chatId.endsWith('@s.whatsapp.net')) return;
 
         const userText = (
@@ -125,22 +123,11 @@ async function handleAutoreply(sock, message) {
 }
 
 /**
- * Command to Turn On/Off (Owner Only)
+ * Command to Turn On/Off (EVERYONE CAN USE)
  */
 async function autoreplyCommand(sock, chatId, message) {
     try {
-        // FIX: Reliable sender identification
-        const sender = message.key.participant || message.key.remoteJid;
-        
-        // Check permissions
-        const isOwner = await isOwnerOrSudo(sender, sock, chatId);
-
-        if (!isOwner) {
-            return await sock.sendMessage(chatId, { 
-                text: '❌ *Access Denied*\nOnly the bot owner can configure Mickey Autoreply.' 
-            }, { quoted: message });
-        }
-
+        // REMOVED: isOwner check. Now anyone can trigger this.
         const text = (message.message?.conversation || message.message?.extendedTextMessage?.text || '').toLowerCase();
         
         if (text.includes('on')) {
@@ -153,7 +140,7 @@ async function autoreplyCommand(sock, chatId, message) {
 
         const status = cfg.isEnabled() ? 'ENABLED ✅' : 'DISABLED ❌';
         await sock.sendMessage(chatId, { 
-            text: `*Mickey Smart AI*\nStatus: ${status}\n\nUse "on" or "off" to control.` 
+            text: `*Mickey Smart AI Status Update*\nAutoreply is now: *${status}*` 
         }, { quoted: message });
 
     } catch (err) {
