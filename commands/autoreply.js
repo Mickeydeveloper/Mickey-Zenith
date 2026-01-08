@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const isOwnerOrSudo = require('../lib/isOwner');
+const settings = require('../settings');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'data', 'autoreply.json');
 const RATE_LIMIT_MS = 4000; // 4 seconds between replies to same user
@@ -67,130 +68,6 @@ class ConfigManager {
 
 const cfg = new ConfigManager(CONFIG_PATH);
 
-// Gundua Kiswahili kwa uhakika zaidi
-function isSwahili(text) {
-    const lower = text.toLowerCase();
-    const swahiliWords = [
-        'habari', 'mambo', 'jambo', 'salama', 'asante', 'karibu', 'ndio', 'hapana', 'sawa', 'poa',
-        'mzuri', 'shikamoo', 'tafadhali', 'kwaheri', 'lala', 'asubuhi', 'mchana', 'jioni', 'vipi',
-        'je', 'unaendelea', 'unzima', 'rafiki', 'kaka', 'dada', 'bwana', 'mama', 'baba'
-    ];
-    return swahiliWords.some(word => lower.includes(word));
-}
-
-// Majibu – yameandikwa kwa mtindo wa kibinadamu zaidi
-const RESPONSES = {
-    swahili: {
-        welcome: [
-            "Habari rafiki! 🇹🇿\nMimi ni Mickey, niko hapa Dar es Salaam.\nNimepokea ujumbe wako, nitakujibu haraka iwezekanavyo!",
-            "Jambo! 😊\nMickey hapa kutoka Dar. Nimeona sms yako, nitakureply hivi karibuni!",
-            "Mambo! 🎉\nKaribu sana! Mickey amepata ujumbe wako na atakuandikia mara anapopata nafasi."
-        ],
-        waiting: [
-            "Mickey ameona ujumbe wako mpya. Subiri kidogo, atajibu hivi punde! ⏳",
-            "Nimepokea hii pia. Mickey atakuja kukujibu haraka iwezekanavyo rafiki!",
-            "Ujumbe umefika salama. Mickey anakuja, ngoja tu kidogo 😊"
-        ],
-        greeting: [
-            "Habari za asubuhi/mchana/jioni!", "Mambo vipi?", "Poa sana huku!", "Salama kabisa!",
-            "Jambo rafiki!", "Habari yako leo?"
-        ],
-        howAreYou: [
-            "Mzima kabisa, asante! Na wewe je?", "Poa tu huku Dar, habari zako?",
-            "Salama sana, asante kwa kuuliza! Unasemaje wewe?"
-        ],
-        positive: ["Sawa basi!", "Poa kabisa!", "Vizuri sana!", "Ndio kabisa!", "Bora tu!"],
-        location: [
-            "Ninatoka Tanzania, naishi Dar es Salaam! 🇹🇿 Unatoka wapi wewe?",
-            "Dar ndio home yangu! Unapenda Tanzania?",
-            "Hapa Dar es Salaam tu, rafiki! Wewe upo wapi?"
-        ],
-        affection: ["Aww nakupenda pia! ❤️", "Asante sana kwa maneno mazuri!", "Wewe pia rafiki wangu 😘"],
-        thanks: ["Karibu sana!", "Starehe!", "Karibu tena rafiki!", "Asante kwako pia!"],
-        goodbye: ["Kwaheri, tuonane tena!", "Lala salama!", "Usiku mwema!", "Baadaye!"],
-        fallback: [
-            "Samahani sikuelewa vizuri, unaweza kusema tena?",
-            "Hebu nijuze zaidi nifahamu 😊",
-            "Niko hapa, endelea tu sema unachotaka!"
-        ]
-    },
-    english: {
-        welcome: [
-            "Hey there! 🇹🇿\nI'm Mickey from Dar es Salaam.\nI've got your message and will reply as soon as I can!",
-            "Hi friend! 😊\nMickey here in Dar. Saw your text, I'll get back to you shortly!",
-            "Hello! 🎉\nWelcome! Mickey has received your message and will respond soon."
-        ],
-        waiting: [
-            "Mickey saw your new message. He'll reply soon, just hang on! ⏳",
-            "Got this one too. Mickey will be with you shortly!",
-            "Message received! Mickey's coming to chat soon 😊"
-        ],
-        greeting: ["Hey!", "What's up?", "Hi there!", "Hello friend!", "How's it going?"],
-        howAreYou: [
-            "I'm great, thanks! How about you?", "All good here in Dar! And you?",
-            "Doing well, thank you for asking! How are you?"
-        ],
-        positive: ["Cool!", "Awesome!", "Nice one!", "Exactly!", "Perfect!"],
-        location: [
-            "I'm from Tanzania, living in Dar es Salaam! 🇹🇿 Where are you from?",
-            "Dar is my home! Do you like Tanzania?",
-            "Right here in Dar es Salaam! Where are you?"
-        ],
-        affection: ["Aww I love you too! ❤️", "Thanks for the sweet words!", "Right back at you 😘"],
-        thanks: ["You're welcome!", "Anytime!", "My pleasure!", "Welcome!"],
-        goodbye: ["Bye for now!", "Talk soon!", "Good night!", "Catch you later!"],
-        fallback: [
-            "Sorry, didn't quite get that. Can you say it again?",
-            "Tell me more so I understand 😊",
-            "I'm here, just keep talking!"
-        ]
-    }
-};
-
-function getRandomResponse(array) {
-    return array[Math.floor(Math.random() * array.length)];
-}
-
-function getReply(userText, isSw, stage) {
-    const lower = userText.toLowerCase();
-    const res = isSw ? RESPONSES.swahili : RESPONSES.english;
-
-    // 1. Ujumbe wa kwanza (new conversation)
-    if (stage === 'new') {
-        return getRandomResponse(res.welcome);
-    }
-
-    // 2. Anasubiri jibu (waiting – ameandika zaidi ya moja haraka haraka)
-    if (stage === 'waiting') {
-        return getRandomResponse(res.waiting);
-    }
-
-    // 3. Mazungumzo ya kawaida
-    if (lower.match(/(habari|jambo|mambo|salama|shikamoo|hi|hello|hey|sup|what's up)/)) {
-        return getRandomResponse(res.greeting);
-    }
-    if (lower.match(/(je|vipi|how are you|habari yako|unzima|how's it going)/)) {
-        return getRandomResponse(res.howAreYou);
-    }
-    if (lower.match(/(mzima|poa|sawa|fine|good|great|okay|nice|cool)/)) {
-        return getRandomResponse(res.positive);
-    }
-    if (lower.match(/(tanzania|dar es salaam|tz|dar|wapi|where.*from)/)) {
-        return getRandomResponse(res.location);
-    }
-    if (lower.match(/(love|nakupenda|❤️|miss you)/)) {
-        return getRandomResponse(res.affection);
-    }
-    if (lower.match(/(asante|thanks|thank you|shukran)/)) {
-        return getRandomResponse(res.thanks);
-    }
-    if (lower.match(/(kwaheri|bye|goodbye|good night|lala|later)/)) {
-        return getRandomResponse(res.goodbye);
-    }
-
-    // Default
-    return getRandomResponse(res.fallback);
-}
 
 async function askExternalAI(prompt) {
     return new Promise((resolve, reject) => {
@@ -231,6 +108,12 @@ function isGreeting(text) {
 function isAboutMe(text) {
     const lower = (text || '').toLowerCase();
     return !!lower.match(/\b(about me|who am i|tell me about me|nani mimi|ni nani mimi|kunipa taarifa kuhusu mimi|ambia kuhusu mimi)\b/);
+}
+
+function isNameQuery(text) {
+    const lower = (text || '').toLowerCase();
+    // English and Swahili common patterns
+    return !!lower.match(/\b(what('?| )?s?\s*your name|what is your name|who are you|who r you|you are who|your name|jina lako nani|una jina gani|wewe ni nani|nani wewe)\b/);
 }
 
 async function autoreplyCommand(sock, chatId, message) {
@@ -312,19 +195,20 @@ async function handleAutoreply(sock, message) {
         const langIsSwahili = isSwahili(userText);
         let reply = getReply(userText, langIsSwahili, newStage);
 
-        // Prepare prompt strategy:
-        // - If greeting or 'about me' request -> send a simple, constrained prompt
-        // - Otherwise -> use a general conversational prompt
-        const useSimple = isGreeting(userText) || isAboutMe(userText);
-        const simplePrompt = isAboutMe(userText)
-            ? `Provide a short (1-2 sentence) friendly description ABOUT THE USER based only on this input: "${userText}". Keep it personal and concise.`
-            : `Provide a short friendly GREETING based on this message: "${userText}". Keep it to one or two short sentences.`;
+        // Prompt strategy: ONLY use either the bot's name or an 'about me' prompt.
+        // This removes general prompts and uses minimal input for external API calls.
+        // Hardcode name prompt to the literal string 'Mickey'
+        const namePrompt = 'Mickey';
+        const aboutMePrompt = `Provide a short (1-2 sentence) friendly description ABOUT THE USER based only on this input: "${userText}". Keep it personal and concise.`;
+        const nameQueryPrompt = `You are ${namePrompt}. The user's message: "${userText}". Reply briefly and naturally AS ${namePrompt} in the same language as the user's message (1-2 sentences). Keep it friendly and human-like.`;
 
-        const generalPrompt = `You are a friendly conversational assistant. Reply naturally to: "${userText}"`;
-
-        // Try external AI with the chosen prompt (fallback to local rules on failure)
         try {
-            const promptToSend = useSimple ? simplePrompt : generalPrompt;
+            // Prefer the special name query prompt when user asks for the bot's name
+            let promptToSend;
+            if (isNameQuery(userText)) promptToSend = nameQueryPrompt;
+            else if (isAboutMe(userText)) promptToSend = aboutMePrompt;
+            else promptToSend = namePrompt;
+
             const ext = await askExternalAI(promptToSend);
             if (ext && typeof ext === 'string' && ext.trim().length > 0) {
                 reply = ext.trim();
