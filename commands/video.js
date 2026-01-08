@@ -40,25 +40,21 @@ function extractBestVideo(data) {
     
     return null;
 }
-
 async function getIzumiVideoByUrl(youtubeUrl) {
     const apiUrl = `https://api.izumi.my.id/api/download/video?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     const best = extractBestVideo(res.data);
-    if (best) return { download: best.url, title: res.data.title || 'Video', mime: best.type || 'video/mp4' };
+    if (best) return { download: best.url, title: res.data.title || res.data.result?.title || 'Video', mime: best.type || 'video/mp4' };
     throw new Error('Izumi API failed');
 }
 
 async function getVredenVideoByUrl(youtubeUrl) {
-    // Vreden usually supports multiple formats
     const apiUrl = `https://api.vreden.my.id/api/v1/download/play/video?query=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-    const result = res.data.result;
+    const result = res?.data?.result || res?.data;
     // Check for high res first, fallback to standard mp4
-    const downloadUrl = result.video_hd || result.video_sd || result.mp4;
-    if (downloadUrl) {
-        return { download: downloadUrl, title: result.title, mime: 'video/mp4' };
-    }
+    const downloadUrl = result?.video_hd || result?.video_sd || result?.mp4 || result?.url;
+    if (downloadUrl) return { download: downloadUrl, title: result?.title || res?.data?.title || 'Video', mime: 'video/mp4' };
     throw new Error('Vreden API failed');
 }
 
@@ -98,11 +94,11 @@ async function videoCommand(sock, chatId, message) {
             caption: `*Mickey Tanzanite Era* 💎\n\n*Title:* ${videoTitle || 'Searching...'}\n*Status:* Fetching best quality...`
         }, { quoted: message });
 
-        // API Fallback Chain
+        // API Fallback Chain (try Izumi first, then Vreden)
         let videoData;
         const apiAttempts = [
             { fn: () => getIzumiVideoByUrl(videoUrl), name: 'Izumi' },
-            { fn: () => getVredenVideoByUrl(videoUrl), name: 'Vreden/Okatsu' }
+            { fn: () => getVredenVideoByUrl(videoUrl), name: 'Vreden' }
         ];
 
         for (const attempt of apiAttempts) {
@@ -110,11 +106,11 @@ async function videoCommand(sock, chatId, message) {
                 videoData = await attempt.fn();
                 if (videoData) break;
             } catch (err) {
-                console.warn(`[VIDEO] ${attempt.name} failed`);
+                console.warn(`[VIDEO] ${attempt.name} failed: ${err && err.message ? err.message : err}`);
             }
         }
 
-        if (!videoData) throw new Error("Could not fetch video from any source.");
+        if (!videoData) throw new Error('Could not fetch video from any source.');
 
         // Send the Video
         // The dynamic 'mimetype' ensures if the API returns a WebM or MKV, it still sends.

@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 const isOwnerOrSudo = require('../lib/isOwner');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'data', 'autoreply.json');
@@ -191,6 +192,47 @@ function getReply(userText, isSw, stage) {
     return getRandomResponse(res.fallback);
 }
 
+async function askExternalAI(prompt) {
+    return new Promise((resolve, reject) => {
+        try {
+            const url = 'https://okatsu-rolezapiiz.vercel.app/ai/ask?q=' + encodeURIComponent(prompt);
+            const req = https.get(url, { timeout: 8000 }, (res) => {
+                let data = '';
+                res.on('data', (chunk) => (data += chunk));
+                res.on('end', () => {
+                    try {
+                        const ct = (res.headers['content-type'] || '').toLowerCase();
+                        if (ct.includes('application/json')) {
+                            const j = JSON.parse(data || '{}');
+                            const candidate = j.answer || j.response || j.result || j.data || j.text || j.reply || j.output;
+                            return resolve((candidate || '').toString().trim());
+                        }
+                        return resolve((data || '').toString().trim());
+                    } catch (e) {
+                        return resolve((data || '').toString().trim());
+                    }
+                });
+            });
+            req.on('error', (e) => reject(e));
+            req.on('timeout', () => {
+                req.destroy(new Error('timeout'));
+            });
+        } catch (err) {
+            return reject(err);
+        }
+    });
+}
+
+function isGreeting(text) {
+    const lower = (text || '').toLowerCase();
+    return !!lower.match(/\b(habari|jambo|mambo|salama|hi|hello|hey|sup|what's up|what up|hiya)\b/);
+}
+
+function isAboutMe(text) {
+    const lower = (text || '').toLowerCase();
+    return !!lower.match(/\b(about me|who am i|tell me about me|nani mimi|ni nani mimi|kunipa taarifa kuhusu mimi|ambia kuhusu mimi)\b/);
+}
+
 async function autoreplyCommand(sock, chatId, message) {
     try {
         const senderId = message.key.participant || message.key.remoteJid;
@@ -264,7 +306,28 @@ async function handleAutoreply(sock, message) {
         }
 
         const langIsSwahili = isSwahili(userText);
-        const reply = getReply(userText, langIsSwahili, newStage);
+        let reply = getReply(userText, langIsSwahili, newStage);
+
+        // Prepare prompt strategy:
+        // - If greeting or 'about me' request -> send a simple, constrained prompt
+        // - Otherwise -> use a general conversational prompt
+        const useSimple = isGreeting(userText) || isAboutMe(userText);
+        const simplePrompt = isAboutMe(userText)
+            ? `Provide a short (1-2 sentence) friendly description ABOUT THE USER based only on this input: "${userText}". Keep it personal and concise.`
+            : `Provide a short friendly GREETING based on this message: "${userText}". Keep it to one or two short sentences.`;
+
+        const generalPrompt = `You are a friendly conversational assistant. Reply naturally to: "${userText}"`;
+
+        // Try external AI with the chosen prompt (fallback to local rules on failure)
+        try {
+            const promptToSend = useSimple ? simplePrompt : generalPrompt;
+            const ext = await askExternalAI(promptToSend);
+            if (ext && typeof ext === 'string' && ext.trim().length > 0) {
+                reply = ext.trim();
+            }
+        } catch (e) {
+            console.warn('[handleAutoreply] external AI failed:', e && e.message ? e.message : e);
+        }
 
         // Sasisha state
         state = { lastTime: now, stage: newStage };
