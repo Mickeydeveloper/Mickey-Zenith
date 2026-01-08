@@ -1,15 +1,13 @@
 'use strict';
 
 /**
- * Autoreply Module - Mickey Smart ONLINE Version (Jan 2026)
- * - Now uses external AI API for more natural, intelligent replies
- * - Only sends one simple prompt: "You are Mickey." + user's message
+ * Autoreply Module - Mickey Smart ONLINE Version (Fixed - Jan 2026)
+ * - Fixed: Now properly extracts "answer" from JSON response
+ * - Uses single prompt: "You are Mickey..." + user message
  * - API URL: https://okatsu-rolezapiiz.vercel.app/ai/ask?q=
- * - Detects language automatically and replies in the same language
- * - First message: Warm welcome if new conversation
- * - Follow-ups: Gentle reminders if poking frequently
- * - Special handling: Name queries, greetings
- * - Fully online, dynamic, human-like replies via API
+ * - Robust JSON parsing with multiple fallback fields
+ * - If API fails or no answer → uses reliable fallbacks
+ * - Special handling for name queries and first messages
  * - Private chats only, rate-limited, owner commands
  */
 
@@ -19,10 +17,9 @@ const https = require('https');
 const isOwnerOrSudo = require('../lib/isOwner');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'data', 'autoreply.json');
-const RATE_LIMIT_MS = 5000; // 5 seconds between replies to same user
+const RATE_LIMIT_MS = 5000;
 
-// Store user states
-const userStates = new Map(); // userId → { lastTime: timestamp, stage: 'new' | 'waiting' | 'chatting', reminderCount: number }
+const userStates = new Map();
 
 class ConfigManager {
     constructor(filePath) {
@@ -68,7 +65,6 @@ class ConfigManager {
 
 const cfg = new ConfigManager(CONFIG_PATH);
 
-// Simple but effective language detection
 function isSwahili(text) {
     const swahiliPattern = /\b(na|wa|ni|kwa|ya|lakini|ndiyo|hapana|asante|karibu|habari|mambo|jambo|poa|sawa|vizuri|nzuri|sana|leo|kesho|jana|bado)\b/i;
     const englishPattern = /\b(the|and|you|me|is|are|was|to|for|with|but|yes|no|thanks|hello|hi|how|what|where|when|good|more)\b/i;
@@ -79,29 +75,25 @@ function isSwahili(text) {
     return swCount > enCount || swCount > 2;
 }
 
-// External AI call - ONLY uses "You are Mickey." + user message
-async function askMickeyAI(userMessage, isSwahili) {
+// Fixed AI call - properly handles JSON with "answer" field
+async function askMickeyAI(userMessage) {
     return new Promise((resolve) => {
         try {
-            // Single unified prompt: You are Mickey + user message
-            const fullPrompt = `You are Mickey, a friendly and cool guy chatting on WhatsApp. Always reply naturally, briefly (1-3 sentences), and in the same language as the user. User's message: "${userMessage}"`;
+            const fullPrompt = `You are Mickey, a friendly, cool and natural WhatsApp buddy. Reply briefly (1-3 sentences), casually and in the exact same language as the user (Swahili or English). User's message: "${userMessage}"`;
 
             const url = `https://okatsu-rolezapiiz.vercel.app/ai/ask?q=${encodeURIComponent(fullPrompt)}`;
 
-            const req = https.get(url, { timeout: 9000 }, (res) => {
+            const req = https.get(url, { timeout: 10000 }, (res) => {
                 let data = '';
                 res.on('data', chunk => data += chunk);
                 res.on('end', () => {
                     try {
-                        let reply = '';
-                        if (res.headers['content-type']?.includes('application/json')) {
-                            const json = JSON.parse(data || '{}');
-                            reply = json.answer || json.response || json.result || json.text || json.reply || json.output || data;
-                        } else {
-                            reply = data;
-                        }
-                        resolve(reply.trim() || null);
+                        const json = JSON.parse(data || '{}');
+                        // Prioritize "answer" field (confirmed from API)
+                        let reply = json.answer || json.response || json.result || json.text || json.reply || json.output || json.data || data;
+                        resolve(typeof reply === 'string' ? reply.trim() : null);
                     } catch (e) {
+                        // If not JSON, return raw text
                         resolve(data.trim() || null);
                     }
                 });
@@ -118,26 +110,28 @@ async function askMickeyAI(userMessage, isSwahili) {
     });
 }
 
-// Fallback replies (in case API fails)
+// Reliable fallbacks
 const FALLBACKS = {
     welcome: (sw) => sw 
         ? 'Karibu sana! 🎉 Mickey amepokea ujumbe wako na atajibu hivi karibuni 😊'
-        : 'Welcome! 🎉 Mickey got your message and will reply soon 😊',
+        : 'Hey! 🎉 Mickey got your message and will reply soon 😊',
 
     reminder: (sw, count) => {
         const msgs = sw ? [
-            'Mickey ameona ujumbe wako... Ata-reply soon 😉',
-            'Subiri kidogo, Mickey anakuandalia jibu zuri 🌟',
-            'Asante kwa subira! Mickey atajibu wakati anapata nafasi 🙏'
+            'Mickey ameona... Ata-reply soon 😉',
+            'Subiri kidogo tu, Mickey anakuandalia jibu 🌟',
+            count > 1 ? 'Asante kwa subira! Mickey atajibu hivi punde 🙏' : 'Mickey amekuelewa vizuri!'
         ] : [
-            'Mickey saw your message... He\'ll reply soon 😉',
-            'Hang on a bit, Mickey\'s preparing a good reply 🌟',
-            'Thanks for your patience! Mickey will reply when he can 🙏'
+            'Mickey saw it... Reply coming soon 😉',
+            'Just a moment, Mickey\'s preparing a reply 🌟',
+            count > 1 ? 'Thanks for waiting! Mickey will reply soon 🙏' : 'Mickey got it!'
         ];
         return msgs[Math.min(count || 0, msgs.length - 1)];
     },
 
-    name: (sw) => sw ? 'Mimi ni Mickey, rafiki yako hapa! 😄 Unaendeleaje?' : 'I\'m Mickey, your friend here! 😄 How you doing?'
+    name: (sw) => sw 
+        ? 'Mimi ni Mickey, rafiki yako wa hapa WhatsApp! 😎 Unaendelea aje?'
+        : 'I\'m Mickey, your WhatsApp buddy here! 😎 How you doing?'
 };
 
 function isGreeting(text) {
@@ -163,7 +157,7 @@ async function autoreplyCommand(sock, chatId, message) {
         const text = (message.message?.conversation || message.message?.extendedTextMessage?.text || '').trim();
         const args = text.split(/\s+/).slice(1).map(a => a.toLowerCase());
 
-        let statusMsg = `🤖 Jibu-Moza (Online AI): *${cfg.isEnabled() ? 'IMEWASHWA' : 'IMEZIMWA'}*\n\nAmri: .autoreply on | off | status`;
+        let statusMsg = `🤖 Mickey Autoreply (Online AI): *${cfg.isEnabled() ? 'IMEWASHWA' : 'IMEZIMWA'}*\n\nAmri: .autoreply on | off | status`;
 
         if (!args.length || ['status', 'hali'].includes(args[0])) {
             await sock.sendMessage(chatId, { text: statusMsg }, { quoted: message });
@@ -177,7 +171,7 @@ async function autoreplyCommand(sock, chatId, message) {
             return;
         }
 
-        await sock.sendMessage(chatId, { text: `✅ Jibu-Moza sasa *${cfg.isEnabled() ? 'IMEWASHWA' : 'IMEZIMWA'}*` }, { quoted: message });
+        await sock.sendMessage(chatId, { text: `✅ Autoreply sasa *${cfg.isEnabled() ? 'IMEWASHWA' : 'IMEZIMWA'}*` }, { quoted: message });
 
     } catch (err) {
         console.error('[autoreplyCommand]', err);
@@ -214,41 +208,37 @@ async function handleAutoreply(sock, message) {
         const isSw = isSwahili(userText);
         let reply = null;
 
-        // Special: Direct name answer (bypass API for consistency)
+        // Special cases
         if (isNameQuery(userText)) {
             reply = FALLBACKS.name(isSw);
-        }
-        // Greeting: Use API normally (it will respond naturally)
-        else if (isGreeting(userText) && state.stage === 'new') {
-            reply = FALLBACKS.welcome(isSw); // Warm welcome for first contact
-        }
-        else {
-            // Main: Call API with only "You are Mickey" prompt
-            reply = await askMickeyAI(userText, isSw);
+        } else if (state.stage === 'new' && isGreeting(userText)) {
+            reply = FALLBACKS.welcome(isSw);
+        } else {
+            // Call AI
+            reply = await askMickeyAI(userText);
 
-            // If API fails or empty → fallback reminder
-            if (!reply || reply.length < 2) {
+            // Strong fallback if API returns nothing or fails
+            if (!reply || reply.length < 3) {
                 reply = state.stage === 'new' 
                     ? FALLBACKS.welcome(isSw)
                     : FALLBACKS.reminder(isSw, state.reminderCount);
             }
         }
 
-        // Determine new stage
+        // Update stage
         let newStage = 'chatting';
         let reminderCount = (state.reminderCount || 0) + 1;
 
-        if (timeSinceLast > 1000 * 60 * 60 * 4) { // >4 hours
+        if (timeSinceLast > 1000 * 60 * 60 * 4) {
             newStage = 'new';
             reminderCount = 0;
-        } else if (timeSinceLast < 1000 * 60 * 10) { // <10 min → poking
+        } else if (timeSinceLast < 1000 * 60 * 10) {
             newStage = 'waiting';
         }
 
-        // Update state
         userStates.set(userId, { lastTime: now, stage: newStage, reminderCount });
 
-        await sock.sendMessage(chatId, { text: reply }, { quoted: message }).catch(() => {});
+        await sock.sendMessage(chatId, { text: reply }, { quoted: message }).catch(console.error);
 
     } catch (err) {
         console.error('[handleAutoreply]', err);
