@@ -1,14 +1,12 @@
 'use strict';
 
 /**
- * Autoreply Module - Mickey Smart ONLINE Version (Fixed - Jan 2026)
- * - Fixed: Now properly extracts "answer" from JSON response
- * - Uses single prompt: "You are Mickey..." + user message
- * - API URL: https://okatsu-rolezapiiz.vercel.app/ai/ask?q=
- * - Robust JSON parsing with multiple fallback fields
- * - If API fails or no answer → uses reliable fallbacks
- * - Special handling for name queries and first messages
- * - Private chats only, rate-limited, owner commands
+ * Autoreply Module - Mickey AI Auto-Reply System
+ * - Responds to private messages with AI-generated replies
+ * - API: https://okatsu-rolezapiiz.vercel.app/ai/ask?q=
+ * - Rate limited to prevent spam
+ * - Supports both English and Swahili
+ * - Owner commands to enable/disable
  */
 
 const fs = require('fs');
@@ -21,11 +19,13 @@ const RATE_LIMIT_MS = 5000;
 
 const userStates = new Map();
 
+// =====================
+// CONFIG MANAGER
+// =====================
 class ConfigManager {
     constructor(filePath) {
         this.filePath = filePath;
         this._ensure();
-        this._data = this._read();
     }
 
     _ensure() {
@@ -42,66 +42,76 @@ class ConfigManager {
         }
     }
 
-    _write() {
-        fs.writeFileSync(this.filePath, JSON.stringify(this._data, null, 2));
+    _write(data) {
+        fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2));
     }
 
     isEnabled() {
-        this._data = this._read();
-        return !!this._data.enabled;
+        return !!this._read().enabled;
     }
 
-    setEnabled(v) {
-        this._data.enabled = !!v;
-        this._write();
+    setEnabled(value) {
+        const data = this._read();
+        data.enabled = !!value;
+        this._write(data);
     }
 
     toggle() {
-        this._data.enabled = !this.isEnabled();
-        this._write();
-        return this._data.enabled;
+        const data = this._read();
+        data.enabled = !data.enabled;
+        this._write(data);
+        return data.enabled;
     }
 }
 
-const cfg = new ConfigManager(CONFIG_PATH);
+const config = new ConfigManager(CONFIG_PATH);
 
+// =====================
+// LANGUAGE DETECTION
+// =====================
 function isSwahili(text) {
-    const swahiliPattern = /\b(na|wa|ni|kwa|ya|lakini|ndiyo|hapana|asante|karibu|habari|mambo|jambo|poa|sawa|vizuri|nzuri|sana|leo|kesho|jana|bado)\b/i;
-    const englishPattern = /\b(the|and|you|me|is|are|was|to|for|with|but|yes|no|thanks|hello|hi|how|what|where|when|good|more)\b/i;
+    const swahiliWords = /\b(na|wa|ni|kwa|ya|lakini|ndiyo|hapana|asante|karibu|habari|mambo|jambo|poa|sawa|vizuri|nzuri|sana|leo|kesho|jana|bado|mimi|wewe|yeye|sisi|ninyi|wao)\b/gi;
+    const englishWords = /\b(the|and|you|me|is|are|was|to|for|with|but|yes|no|thanks|hello|hi|how|what|where|when|good|more|just|very|also|can|will|would)\b/gi;
     
-    const swCount = (text.match(swahiliPattern) || []).length;
-    const enCount = (text.match(englishPattern) || []).length;
+    const swCount = (text.match(swahiliWords) || []).length;
+    const enCount = (text.match(englishWords) || []).length;
     
-    return swCount > enCount || swCount > 2;
+    return swCount > enCount || (swCount > 0 && enCount === 0);
 }
 
-// Fixed AI call - properly handles JSON with "answer" field
-async function askMickeyAI(userMessage) {
+// =====================
+// AI API CALL
+// =====================
+function askMickeyAI(userMessage) {
     return new Promise((resolve) => {
         try {
-            const fullPrompt = `You are Mickey, a friendly, cool and natural WhatsApp buddy. Reply briefly (1-3 sentences), casually and in the exact same language as the user (Swahili or English). User's message: "${userMessage}"`;
+            const prompt = `You are Mickey, a friendly and cool WhatsApp bot. Reply in 1-3 sentences, casually in the same language as user (Swahili or English). Message: "${userMessage}"`;
+            const encodedPrompt = encodeURIComponent(prompt);
+            const url = `https://okatsu-rolezapiiz.vercel.app/ai/ask?q=${encodedPrompt}`;
 
-            const url = `https://okatsu-rolezapiiz.vercel.app/ai/ask?q=${encodeURIComponent(fullPrompt)}`;
+            const timeoutId = setTimeout(() => {
+                req.destroy();
+                resolve(null);
+            }, 12000);
 
-            const req = https.get(url, { timeout: 10000 }, (res) => {
+            const req = https.get(url, { timeout: 12000 }, (res) => {
                 let data = '';
-                res.on('data', chunk => data += chunk);
+                res.on('data', chunk => { data += chunk; });
                 res.on('end', () => {
+                    clearTimeout(timeoutId);
                     try {
-                        const json = JSON.parse(data || '{}');
-                        // Prioritize "answer" field (confirmed from API)
-                        let reply = json.answer || json.response || json.result || json.text || json.reply || json.output || json.data || data;
-                        resolve(typeof reply === 'string' ? reply.trim() : null);
+                        const json = JSON.parse(data);
+                        const reply = json.answer || json.response || json.result || json.text || json.data;
+                        const text = typeof reply === 'string' ? reply.trim() : null;
+                        resolve(text && text.length > 0 ? text : null);
                     } catch (e) {
-                        // If not JSON, return raw text
-                        resolve(data.trim() || null);
+                        resolve(data.trim().length > 0 ? data.trim() : null);
                     }
                 });
             });
 
-            req.on('error', () => resolve(null));
-            req.on('timeout', () => {
-                req.destroy();
+            req.on('error', () => {
+                clearTimeout(timeoutId);
                 resolve(null);
             });
         } catch (err) {
@@ -110,147 +120,137 @@ async function askMickeyAI(userMessage) {
     });
 }
 
-// Reliable fallbacks
+// =====================
+// FALLBACK RESPONSES
+// =====================
 const FALLBACKS = {
-    welcome: (sw) => sw 
-        ? 'Karibu sana! 🎉 Mickey amepokea ujumbe wako na atajibu hivi karibuni 😊'
-        : 'Hey! 🎉 Mickey got your message and will reply soon 😊',
+    welcome: (isSw) => isSw 
+        ? 'Jambo! 👋 Mickey hapa. Karibu sana! 😊'
+        : 'Hey! 👋 Mickey here. What\'s up? 😊',
 
-    reminder: (sw, count) => {
-        const msgs = sw ? [
-            'Mickey ameona... Ata-reply soon 😉',
-            'Subiri kidogo tu, Mickey anakuandalia jibu 🌟',
-            count > 1 ? 'Asante kwa subira! Mickey atajibu hivi punde 🙏' : 'Mickey amekuelewa vizuri!'
-        ] : [
-            'Mickey saw it... Reply coming soon 😉',
-            'Just a moment, Mickey\'s preparing a reply 🌟',
-            count > 1 ? 'Thanks for waiting! Mickey will reply soon 🙏' : 'Mickey got it!'
-        ];
-        return msgs[Math.min(count || 0, msgs.length - 1)];
-    },
+    generic: (isSw) => isSw
+        ? 'Nzuri tu! Asante kwa ujumbe. 🙏'
+        : 'All good! Thanks for reaching out. 🙏',
 
-    name: (sw) => sw 
-        ? 'Mimi ni Mickey, rafiki yako wa hapa WhatsApp! 😎 Unaendelea aje?'
-        : 'I\'m Mickey, your WhatsApp buddy here! 😎 How you doing?'
+    thinking: (isSw) => isSw
+        ? 'Najifunza... Tafadhali subiri 🤔'
+        : 'Thinking... Give me a moment 🤔'
 };
 
-function isGreeting(text) {
-    const lower = text.toLowerCase();
-    return /\b(hi|hello|hey|habari|jambo|mambo|salama|poa|vipi|sup|hiya)\b/.test(lower);
+// =====================
+// HELPER FUNCTIONS
+// =====================
+function isPrivateChat(chatId) {
+    return chatId && chatId.endsWith('@s.whatsapp.net') && !chatId.endsWith('@g.us');
 }
 
-function isNameQuery(text) {
-    const lower = text.toLowerCase();
-    return /\b(what'?s?\s*your name|who are you|jina lako|una jina gani|wewe ni nani|your name)\b/.test(lower);
+function getMessageText(message) {
+    return (
+        message.message?.conversation ||
+        message.message?.extendedTextMessage?.text ||
+        message.message?.imageMessage?.caption ||
+        message.message?.videoMessage?.caption ||
+        ''
+    ).trim();
 }
 
+function isCommand(text) {
+    return text.startsWith('.') || text.startsWith('!') || text.startsWith('/');
+}
+
+// =====================
+// MAIN AUTOREPLY HANDLER
+// =====================
+async function handleAutoreply(sock, message) {
+    try {
+        // Check if enabled
+        if (!config.isEnabled()) return;
+        
+        // Ignore bot's own messages
+        if (message.key.fromMe) return;
+
+        // Check if private chat
+        const chatId = message.key.remoteJid;
+        if (!isPrivateChat(chatId)) return;
+
+        // Extract message text
+        const userText = getMessageText(message);
+        if (!userText || isCommand(userText)) return;
+
+        // Rate limiting
+        const userId = message.key.participant || message.key.remoteJid;
+        const now = Date.now();
+        const state = userStates.get(userId) || { lastReply: 0 };
+
+        if (now - state.lastReply < RATE_LIMIT_MS) return;
+
+        userStates.set(userId, { lastReply: now });
+
+        // Determine language
+        const isSw = isSwahili(userText);
+
+        // Get AI response
+        let reply = await askMickeyAI(userText);
+
+        // Use fallback if AI fails
+        if (!reply || reply.length < 2) {
+            reply = FALLBACKS.generic(isSw);
+        }
+
+        // Send reply
+        await sock.sendMessage(chatId, { text: reply }, { quoted: message }).catch(err => {
+            console.error('[autoreply] Send error:', err.message);
+        });
+
+    } catch (err) {
+        console.error('[handleAutoreply] Error:', err);
+    }
+}
+
+// =====================
+// COMMAND HANDLER
+// =====================
 async function autoreplyCommand(sock, chatId, message) {
     try {
         const senderId = message.key.participant || message.key.remoteJid;
         const isOwner = await isOwnerOrSudo(senderId, sock, chatId);
 
-        if (!message.key.fromMe && !isOwner) {
-            await sock.sendMessage(chatId, { text: '❌ Amri hii ni ya mmiliki pekee.' }, { quoted: message });
+        if (!isOwner) {
+            await sock.sendMessage(chatId, { text: '❌ Only owner can use this command' }, { quoted: message });
             return;
         }
 
-        const text = (message.message?.conversation || message.message?.extendedTextMessage?.text || '').trim();
-        const args = text.split(/\s+/).slice(1).map(a => a.toLowerCase());
+        const text = getMessageText(message);
+        const args = text.split(/\s+/).slice(1);
 
-        let statusMsg = `🤖 Mickey Autoreply (Online AI): *${cfg.isEnabled() ? 'IMEWASHWA' : 'IMEZIMWA'}*\n\nAmri: .autoreply on | off | status`;
-
-        if (!args.length || ['status', 'hali'].includes(args[0])) {
-            await sock.sendMessage(chatId, { text: statusMsg }, { quoted: message });
+        if (!args.length || args[0].toLowerCase() === 'status') {
+            const status = config.isEnabled() ? '✅ ENABLED' : '❌ DISABLED';
+            await sock.sendMessage(chatId, { 
+                text: `🤖 Autoreply Status: ${status}\n\nUsage: .autoreply on/off` 
+            }, { quoted: message });
             return;
         }
 
-        if (['on', 'washa', 'enable'].includes(args[0])) cfg.setEnabled(true);
-        else if (['off', 'zima', 'disable'].includes(args[0])) cfg.setEnabled(false);
-        else {
-            await sock.sendMessage(chatId, { text: '⚠️ Amri: on | off | status' }, { quoted: message });
-            return;
-        }
-
-        await sock.sendMessage(chatId, { text: `✅ Autoreply sasa *${cfg.isEnabled() ? 'IMEWASHWA' : 'IMEZIMWA'}*` }, { quoted: message });
-
-    } catch (err) {
-        console.error('[autoreplyCommand]', err);
-    }
-}
-
-async function handleAutoreply(sock, message) {
-    try {
-        if (!cfg.isEnabled()) return;
-        if (message.key.fromMe) return;
-
-        const chatId = message.key.remoteJid;
-        const isPrivate = /(@s\.whatsapp\.net\( |@c\.us \))/i.test(chatId) && !chatId.endsWith('@g.us');
-        if (!isPrivate) return;
-
-        const userText = (
-            message.message?.conversation ||
-            message.message?.extendedTextMessage?.text ||
-            message.message?.imageMessage?.caption ||
-            message.message?.videoMessage?.caption ||
-            ''
-        ).trim();
-
-        if (!userText || userText.startsWith('.') || userText.startsWith('!')) return;
-
-        const userId = message.key.participant || message.key.remoteJid;
-        const now = Date.now();
-
-        let state = userStates.get(userId) || { lastTime: 0, stage: 'new', reminderCount: 0 };
-        const timeSinceLast = now - state.lastTime;
-
-        if (timeSinceLast < RATE_LIMIT_MS) return;
-
-        const isSw = isSwahili(userText);
-        let reply = null;
-
-        // Special cases
-        if (isNameQuery(userText)) {
-            reply = FALLBACKS.name(isSw);
-        } else if (state.stage === 'new' && isGreeting(userText)) {
-            reply = FALLBACKS.welcome(isSw);
+        const cmd = args[0].toLowerCase();
+        if (cmd === 'on' || cmd === 'enable') {
+            config.setEnabled(true);
+            await sock.sendMessage(chatId, { text: '✅ Autoreply is now ENABLED' }, { quoted: message });
+        } else if (cmd === 'off' || cmd === 'disable') {
+            config.setEnabled(false);
+            await sock.sendMessage(chatId, { text: '❌ Autoreply is now DISABLED' }, { quoted: message });
         } else {
-            // Call AI
-            reply = await askMickeyAI(userText);
-
-            // Strong fallback if API returns nothing or fails
-            if (!reply || reply.length < 3) {
-                reply = state.stage === 'new' 
-                    ? FALLBACKS.welcome(isSw)
-                    : FALLBACKS.reminder(isSw, state.reminderCount);
-            }
+            await sock.sendMessage(chatId, { text: '⚠️ Use: .autoreply on/off/status' }, { quoted: message });
         }
-
-        // Update stage
-        let newStage = 'chatting';
-        let reminderCount = (state.reminderCount || 0) + 1;
-
-        if (timeSinceLast > 1000 * 60 * 60 * 4) {
-            newStage = 'new';
-            reminderCount = 0;
-        } else if (timeSinceLast < 1000 * 60 * 10) {
-            newStage = 'waiting';
-        }
-
-        userStates.set(userId, { lastTime: now, stage: newStage, reminderCount });
-
-        await sock.sendMessage(chatId, { text: reply }, { quoted: message }).catch(console.error);
 
     } catch (err) {
-        console.error('[handleAutoreply]', err);
+        console.error('[autoreplyCommand] Error:', err);
     }
 }
 
-function isAutoreplyEnabled() {
-    return cfg.isEnabled();
-}
-
-module.exports = {
-    autoreplyCommand,
-    isAutoreplyEnabled,
-    handleAutoreply
-};
+// =====================
+// EXPORTS
+// =====================
+module.exports = handleAutoreply;
+module.exports.handleAutoreply = handleAutoreply;
+module.exports.autoreplyCommand = autoreplyCommand;
+module.exports.isEnabled = () => config.isEnabled();
