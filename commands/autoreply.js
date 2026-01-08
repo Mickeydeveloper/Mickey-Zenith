@@ -1,12 +1,9 @@
 'use strict';
 
 /**
- * Mickey Smart AI Autoreply (Jan 2026 Version)
- * Features:
- * - Identity-focused (Mickey)
- * - Dynamic Prompting via API
- * - Smart Language detection
- * - Rate limiting & Context awareness
+ * Mickey Smart AI Autoreply (Fixed & Optimized)
+ * - Uses API with Identity Prompting
+ * - Proper error handling for missing functions
  */
 
 const fs = require('fs');
@@ -15,7 +12,7 @@ const https = require('https');
 const isOwnerOrSudo = require('../lib/isOwner');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'data', 'autoreply.json');
-const BOT_NAME = "Mickey"; // The central Prompt Name
+const BOT_NAME = "Mickey"; 
 const RATE_LIMIT_MS = 5000; 
 
 const userStates = new Map();
@@ -23,7 +20,13 @@ const userStates = new Map();
 class ConfigManager {
     constructor(filePath) {
         this.filePath = filePath;
+        this._ensureDir();
         this._data = this._read();
+    }
+
+    _ensureDir() {
+        const dir = path.dirname(this.filePath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     }
 
     _read() {
@@ -38,6 +41,7 @@ class ConfigManager {
     }
 
     isEnabled() { return !!this._data.enabled; }
+    setEnabled(val) { this._data.enabled = val; this._save(); }
     toggle() { 
         this._data.enabled = !this._data.enabled; 
         this._save(); 
@@ -48,20 +52,28 @@ class ConfigManager {
 const cfg = new ConfigManager(CONFIG_PATH);
 
 /**
- * Core AI Function - Fetches response based on the "Mickey" persona
+ * Detect Language (Swahili vs English)
  */
-async function fetchAIReply(userMessage, contextStage) {
-    return new Promise((resolve) => {
-        // System Prompt: Gives Mickey his personality
-        const systemInstruction = `You are ${BOT_NAME}, a friendly and helpful AI assistant. 
-        Keep answers short, natural, and human-like. 
-        If the user speaks Swahili, reply in Swahili. 
-        User Stage: ${contextStage}.`;
+function getLanguage(text) {
+    const swahiliWords = ['mambo', 'vipi', 'habari', 'safi', 'mzima', 'asante', 'jambo'];
+    const lowerText = text.toLowerCase();
+    return swahiliWords.some(word => lowerText.includes(word)) ? 'sw' : 'en';
+}
 
-        const fullPrompt = `${systemInstruction}\n\nUser: ${userMessage}\n${BOT_NAME}:`;
+/**
+ * Function to call the API using the Prompt Name "Mickey"
+ */
+async function askMickeyAI(userText, lang) {
+    return new Promise((resolve) => {
+        // We inject the identity (Mickey) directly into the prompt
+        const systemPrompt = `Your name is ${BOT_NAME}. You are a helpful, cool, and friendly person. 
+        Reply in ${lang === 'sw' ? 'Swahili' : 'English'}. Keep it short and human-like.`;
+        
+        const fullPrompt = `${systemPrompt}\nUser: ${userText}\n${BOT_NAME}:`;
+        
         const url = `https://okatsu-rolezapiiz.vercel.app/ai/ask?q=${encodeURIComponent(fullPrompt)}`;
 
-        const req = https.get(url, { timeout: 10000 }, (res) => {
+        const req = https.get(url, { timeout: 8000 }, (res) => {
             let data = '';
             res.on('data', (chunk) => data += chunk);
             res.on('end', () => {
@@ -72,17 +84,8 @@ async function fetchAIReply(userMessage, contextStage) {
                 } catch (e) { resolve(null); }
             });
         });
-
         req.on('error', () => resolve(null));
     });
-}
-
-/**
- * Detects if the message is in Swahili to help the AI context
- */
-function isSwahili(text) {
-    const swahiliKeywords = ['habari', 'mambo', 'vipi', 'jambo', 'asante', 'kaka', 'safi'];
-    return swahiliKeywords.some(word => text.toLowerCase().includes(word));
 }
 
 async function handleAutoreply(sock, message) {
@@ -90,58 +93,69 @@ async function handleAutoreply(sock, message) {
         if (!cfg.isEnabled() || message.key.fromMe) return;
 
         const chatId = message.key.remoteJid;
-        if (!chatId.endsWith('@s.whatsapp.net')) return; // Private only
+        // Ensure it's a private chat
+        if (!chatId.endsWith('@s.whatsapp.net')) return;
 
-        const userText = (message.message?.conversation || message.message?.extendedTextMessage?.text || '').trim();
+        const userText = (
+            message.message?.conversation || 
+            message.message?.extendedTextMessage?.text || 
+            message.message?.imageMessage?.caption || ''
+        ).trim();
+
+        // Ignore commands or empty messages
         if (!userText || userText.startsWith('.') || userText.startsWith('!')) return;
 
-        const userId = chatId;
         const now = Date.now();
-        let state = userStates.get(userId) || { lastTime: 0, count: 0 };
+        const state = userStates.get(chatId) || { lastTime: 0 };
 
-        // Rate Limiting
+        // Rate Limit check
         if (now - state.lastTime < RATE_LIMIT_MS) return;
 
-        // Determine Conversation Stage
-        let stage = "continuing conversation";
-        if (now - state.lastTime > 1000 * 60 * 30) stage = "new greeting";
-
-        // Show typing status for "human" feel
+        // Show "typing..."
         await sock.sendPresenceUpdate('composing', chatId);
 
-        // Get AI Response
-        const aiResponse = await fetchAIReply(userText, stage);
-        
-        // Fallback if API fails
-        const fallback = isSwahili(userText) 
-            ? `Nimekupata, subiri kidogo ${BOT_NAME} akurudie.` 
-            : `I've received your message, ${BOT_NAME} will get back to you soon.`;
+        const lang = getLanguage(userText);
+        const aiReply = await askMickeyAI(userText, lang);
 
-        const finalText = aiResponse || fallback;
+        // Final Response
+        const responseText = aiReply || (lang === 'sw' ? `Nimekupata, ${BOT_NAME} atajibu hivi punde.` : `Got it, ${BOT_NAME} will reply shortly.`);
 
-        await sock.sendMessage(chatId, { text: finalText }, { quoted: message });
+        await sock.sendMessage(chatId, { text: responseText }, { quoted: message });
 
-        // Update User State
-        userStates.set(userId, { lastTime: now, count: state.count + 1 });
+        // Update state
+        userStates.set(chatId, { lastTime: now });
 
     } catch (err) {
-        console.error('Autoreply Error:', err);
+        console.error('[Autoreply Error]', err);
     }
 }
 
-/**
- * Command to turn autoreply on/off
- */
 async function autoreplyCommand(sock, chatId, message) {
-    const senderId = message.key.participant || message.key.remoteJid;
-    const isOwner = await isOwnerOrSudo(senderId, sock, chatId);
-    
-    if (!isOwner) return;
+    try {
+        const senderId = message.key.participant || message.key.remoteJid;
+        const isOwner = await isOwnerOrSudo(senderId, sock, chatId);
+        
+        if (!isOwner) {
+            return await sock.sendMessage(chatId, { text: '❌ Only the owner can use this.' }, { quoted: message });
+        }
 
-    const status = cfg.toggle();
-    const msg = status ? `✅ ${BOT_NAME} Autoreply is now ON` : `❌ ${BOT_NAME} Autoreply is now OFF`;
-    
-    await sock.sendMessage(chatId, { text: msg }, { quoted: message });
+        const text = (message.message?.conversation || message.message?.extendedTextMessage?.text || '').toLowerCase();
+        const args = text.split(/\s+/);
+
+        if (args.includes('on')) {
+            cfg.setEnabled(true);
+        } else if (args.includes('off')) {
+            cfg.setEnabled(false);
+        } else {
+            cfg.toggle();
+        }
+
+        const status = cfg.isEnabled() ? 'ON ✅' : 'OFF ❌';
+        await sock.sendMessage(chatId, { text: `Autoreply status: ${status}` }, { quoted: message });
+
+    } catch (err) {
+        console.error('[Command Error]', err);
+    }
 }
 
 module.exports = {
