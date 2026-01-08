@@ -149,12 +149,22 @@ async function handleMessages(sock, messageUpdate, printLog) {
 
         // Handle autoread functionality
         await handleAutoread(sock, message);
-        // Handle autoreply functionality (private chats only)
-        try {
-            console.log('[main] invoking handleAutoreply for', message.key.remoteJid);
-            await handleAutoreply(sock, message);
-        } catch (e) {
-            console.error('[main] handleAutoreply error:', e);
+
+        // Determine chat context early
+        const chatIdEarly = message.key.remoteJid;
+        const isGroupEarly = chatIdEarly && chatIdEarly.toString().endsWith('@g.us');
+
+        // Handle autoreply functionality only for private chats
+        if (!isGroupEarly) {
+            try {
+                console.log('[main] invoking handleAutoreply for', chatIdEarly);
+                await handleAutoreply(sock, message);
+            } catch (e) {
+                console.error('[main] handleAutoreply error:', e);
+            }
+        } else {
+            // skip calling handleAutoreply for group messages to avoid noisy logs
+            // but still honor other group handlers below
         }
 
         // Store message for antidelete feature
