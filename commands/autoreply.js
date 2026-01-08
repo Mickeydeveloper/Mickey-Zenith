@@ -275,7 +275,11 @@ async function handleAutoreply(sock, message) {
         if (message.key.fromMe) return;
 
         const chatId = message.key.remoteJid;
-        if (chatId.endsWith('@g.us')) return; // Private chats only
+        // Only respond to standard private chat JIDs (avoid @g.us groups and other special JIDs like @lid)
+        const isPrivateJid = /(@s\.whatsapp\.net$|@c\.us$)/i.test(chatId || '');
+        if (!isPrivateJid) return; // ignore groups, lists, and other non-private JIDs
+
+        if (chatId.endsWith('@g.us')) return; // redundant guard for groups
 
         const userText = (
             message.message?.conversation ||
