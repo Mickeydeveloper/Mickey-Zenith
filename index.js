@@ -146,18 +146,29 @@ async function startXeonBotInc() {
                     return waMessage;
                 } catch (err) {
                     // If anything fails, fallback to metadata-only send (safe)
-                    console.debug && console.debug('Real-forward failed, falling back to metadata-only send:', err && err.message ? err.message : err);
-                    message.contextInfo = message.contextInfo || {};
-                    message.contextInfo.isForwarded = true;
-                    message.contextInfo.forwardingScore = 999;
-                    message.contextInfo.forwardedNewsletterMessageInfo = {
-                        newsletterJid: channelRD.id,
-                        newsletterName: channelRD.name,
-                        serverMessageId: -1
-                    };
-                    // Preserve externalAdReply so ad/previews set by commands (help, play, etc.) are not stripped
-                }
-                return origSendMessage(jid, message, options);
+                        console.debug && console.debug('Real-forward failed, falling back to metadata-only send:', err && err.message ? err.message : err);
+
+                        // Prepare a safe fallback message object. Don't mutate `message` if it's not an object.
+                        let fallbackMessage;
+                        if (message && typeof message === 'object') {
+                            fallbackMessage = message;
+                        } else {
+                            // If original message is a primitive (string/number) or undefined,
+                            // wrap it into a simple text message so we can attach contextInfo safely.
+                            fallbackMessage = { text: String(message || '') };
+                        }
+
+                        fallbackMessage.contextInfo = fallbackMessage.contextInfo || {};
+                        fallbackMessage.contextInfo.isForwarded = true;
+                        fallbackMessage.contextInfo.forwardingScore = 999;
+                        fallbackMessage.contextInfo.forwardedNewsletterMessageInfo = fallbackMessage.contextInfo.forwardedNewsletterMessageInfo || {
+                            newsletterJid: channelRD.id,
+                            newsletterName: channelRD.name,
+                            serverMessageId: -1
+                        };
+                        // Preserve externalAdReply so ad/previews set by commands (help, play, etc.) are not stripped
+                        return origSendMessage(jid, fallbackMessage, options);
+                    }
             };
         } catch (e) {
             console.warn('Could not wrap sendMessage to forward from channel:', e && e.message ? e.message : e);
