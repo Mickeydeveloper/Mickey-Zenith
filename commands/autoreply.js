@@ -1,17 +1,6 @@
 "use strict";
 
 /**
- * Cleaned Autoreply Module
- * - Responds to private messages with a short AI reply
- * - Config stored in `data/autoreply.json`
- * - Owner-only command: `.autoreply on|off|status`
- */
-
-const fs = require("fs");
-const path = require("path");
-"use strict";
-
-/**
  * Autoreply command - minimal and robust implementation
  * - Uses `data/autoreply.json` to store enabled flag
  * - Exports `handleAutoreply`, `autoreplyCommand`, and `isAutoreplyEnabled`
@@ -78,14 +67,20 @@ function isCommand(text) {
 
 async function askMickeyAI(userMessage) {
     try {
-        const prompt = `You are Mickey, a friendly WhatsApp bot. Reply concisely in same language as user. Message: "${userMessage}"`;
+        const cleanUser = String(userMessage || '').trim().replace(/\s+/g, ' ');
+        const prompt = `You are Mickey, a friendly and helpful WhatsApp assistant. Reply in 1-2 short sentences, casual and polite, in the same language as the user. Avoid mentioning you are an AI. Message: "${cleanUser}"`;
         const url = `https://okatsu-rolezapiiz.vercel.app/ai/ask?q=${encodeURIComponent(prompt)}`;
         const res = await axios.get(url, { timeout: 12000 });
         const data = res?.data;
         if (!data) return null;
-        const reply = data.answer || data.response || data.result || data.text || (typeof data === 'string' ? data : null) || data.data;
+        let reply = data.answer || data.response || data.result || data.text || data.data || null;
+        if (!reply && typeof data === 'string') reply = data;
         if (!reply) return null;
-        return String(reply).trim();
+        let text = String(reply).trim();
+        text = text.replace(/^"|"$/g, '').replace(/^'|'$/g, '').replace(/<[^>]*>/g, '').trim();
+        text = text.replace(/\n{2,}/g, '\n').slice(0, 1000).trim();
+        if (!text) return null;
+        return text;
     } catch (e) {
         return null;
     }
@@ -124,6 +119,7 @@ async function handleAutoreply(sock, message) {
         let reply = await askMickeyAI(text);
         if (!reply || reply.length < 2) reply = FALLBACK(isSw);
 
+        try { console.debug && console.debug('[autoreply] send to', chatId, 'reply:', reply); } catch (e) {}
         await sock.sendMessage(chatId, { text: reply }, { quoted: message }).catch(() => {});
     } catch (e) {
         console.error('[autoreply] error', e && (e.message || e));
