@@ -204,4 +204,6 @@ module.exports = {
     handleAutoreply,
     autoreplyCommand,
     isEnabled: () => config.isEnabled(),
+    // legacy name expected by main.js
+    isAutoreplyEnabled: () => config.isEnabled(),
 };

@@ -154,8 +154,9 @@ async function handleMessages(sock, messageUpdate, printLog) {
         const chatIdEarly = message.key.remoteJid;
         const isGroupEarly = chatIdEarly && chatIdEarly.toString().endsWith('@g.us');
 
-        // Handle autoreply functionality only for private chats
-        if (!isGroupEarly) {
+        // Handle autoreply functionality only for real private chats (standard user JIDs)
+        // Avoid invoking autoreply for linked/device IDs like '@lid' which can interfere with command processing
+        if (!isGroupEarly && String(chatIdEarly).endsWith('@s.whatsapp.net')) {
             try {
                 console.log('[main] invoking handleAutoreply for', chatIdEarly);
                 await handleAutoreply(sock, message);
