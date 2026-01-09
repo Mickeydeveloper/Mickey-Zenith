@@ -60,8 +60,8 @@ async function getVredenVideoByUrl(youtubeUrl) {
 
 async function videoCommand(sock, chatId, message) {
     try {
-        const text = message.message?.conversation || message.message?.extendedTextMessage?.text;
-        const searchQuery = text.split(' ').slice(1).join(' ').trim();
+        const text = message.message?.conversation || message.message?.extendedTextMessage?.text || '';
+        const searchQuery = String(text).split(/\s+/).slice(1).join(' ').trim();
 
         if (!searchQuery) {
             await sock.sendMessage(chatId, { text: 'What video do you want to download?' }, { quoted: message });
@@ -86,13 +86,17 @@ async function videoCommand(sock, chatId, message) {
         }
 
         // Send Processing Notification with Thumbnail
-        const ytId = (videoUrl.match(/(?:youtu\.be\/|v=)([a-zA-Z0-9_-]{11})/) || [])[1];
+        const ytId = (videoUrl.match(/(?:youtu\.be\/|v=|embed\/|\/v\/)([a-zA-Z0-9_-]{11})/) || [])[1];
         const thumb = videoThumbnail || (ytId ? `https://i.ytimg.com/vi/${ytId}/maxresdefault.jpg` : undefined);
-        
-        await sock.sendMessage(chatId, {
-            image: { url: thumb },
-            caption: `*Mickey Tanzanite Era* 💎\n\n*Title:* ${videoTitle || 'Searching...'}\n*Status:* Fetching best quality...`
-        }, { quoted: message });
+
+        if (thumb) {
+            await sock.sendMessage(chatId, {
+                image: { url: thumb },
+                caption: `*Mickey Tanzanite Era* 💎\n\n*Title:* ${videoTitle || 'Searching...'}\n*Status:* Fetching best quality...`
+            }, { quoted: message });
+        } else {
+            await sock.sendMessage(chatId, { text: `*Mickey Tanzanite Era* 💎\n\n*Title:* ${videoTitle || 'Searching...'}\n*Status:* Fetching best quality...` }, { quoted: message });
+        }
 
         // API Fallback Chain (try Izumi first, then Vreden)
         let videoData;
@@ -110,15 +114,23 @@ async function videoCommand(sock, chatId, message) {
             }
         }
 
-        if (!videoData) throw new Error('Could not fetch video from any source.');
+        if (!videoData || !videoData.download) throw new Error('Could not fetch video from any source.');
 
-        // Send the Video
-        // The dynamic 'mimetype' ensures if the API returns a WebM or MKV, it still sends.
+        // sanitize filename
+        function sanitizeFilename(name) {
+            if (!name) return 'video';
+            return String(name).replace(/[\\/:*?"<>|]+/g, '').trim().slice(0, 200) || 'video';
+        }
+
+        const safeTitle = sanitizeFilename(videoData.title || videoTitle || 'Video');
+        const mime = videoData.mime || 'video/mp4';
+        const ext = (mime.split('/')[1] || 'mp4').split('+')[0];
+
         await sock.sendMessage(chatId, {
             video: { url: videoData.download },
-            mimetype: videoData.mime || 'video/mp4',
-            fileName: `${videoData.title}.mp4`,
-            caption: `*${videoData.title}*\n\n> *Mickey Tanzanite Era* 💎`
+            mimetype: mime,
+            fileName: `${safeTitle}.${ext}`,
+            caption: `*${safeTitle}*\n\n> *Mickey Tanzanite Era* 💎`
         }, { quoted: message });
 
     } catch (error) {

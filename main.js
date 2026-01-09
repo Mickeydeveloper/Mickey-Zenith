@@ -372,7 +372,8 @@ async function handleMessages(sock, messageUpdate, printLog) {
         }
 
         // PM blocker: block non-owner DMs when enabled (do not ban)
-        if (!isGroup && !message.key.fromMe && !senderIsSudo) {
+        // Allow the owner or sudo users to bypass the PM blocker
+        if (!isGroup && !message.key.fromMe && !senderIsOwnerOrSudo) {
             try {
                 const pmState = readPmBlockerState();
                 if (pmState.enabled) {
