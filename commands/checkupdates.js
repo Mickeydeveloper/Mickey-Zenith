@@ -20,13 +20,24 @@ async function checkUpdatesCommand(sock, chatId, message) {
 
         if (res.mode === 'git') {
             if (!res.available) {
-                await sock.sendMessage(chatId, { text: `✅ No updates available. Current revision: ${res.oldRev}` }, { quoted: message });
+                await sock.sendMessage(chatId, { text: `✅ No updates available — current revision: ${res.oldRev}` }, { quoted: message });
                 return;
             }
-            // Prepare commit/file summary (trim long lists)
-            const commitList = res.commits ? res.commits.split('\n').slice(0, 30).join('\n') : 'No commit info';
-            const fileList = res.files ? res.files.split('\n').slice(0, 60).join('\n') : 'No file list';
-            const msg = `⚠️ Updates available!\nFrom: ${res.oldRev}\nTo: ${res.newRev}\n\n*Commits:*\n${commitList}\n\n*Files changed:*\n${fileList}`;
+
+            // Parse changed files and filter for commands/ and index.js
+            const allFiles = res.files ? res.files.split('\n').map(f => f.trim()).filter(Boolean) : [];
+            const relevant = allFiles.filter(f => f.startsWith('commands/') || f === 'index.js' || f.endsWith('/index.js') || f.includes('/index.js'));
+
+            let msg = '';
+            if (relevant.length === 0) {
+                msg = `⚠️ *Update available!*\n_No changes detected in *commands/* or *index.js._\nTotal files changed: ${allFiles.length || 'unknown'}\n\nUse *.update* to apply updates.`;
+            } else {
+                const maxShow = 30;
+                const shown = relevant.slice(0, maxShow);
+                const more = relevant.length - shown.length;
+                msg = `⚠️ *Update available!*\n*Files changed in commands/index:* (${relevant.length})\n${shown.map(f => `• ${f}`).join('\n')}${more > 0 ? `\n...and ${more} more` : ''}\n\nUse *.update* to apply changes.`;
+            }
+
             await sock.sendMessage(chatId, { text: msg }, { quoted: message });
             return;
         }
@@ -34,34 +45,35 @@ async function checkUpdatesCommand(sock, chatId, message) {
         if (res.mode === 'zip') {
             const prev = res.previous;
             const meta = res.remoteMeta;
-            if (res.available && prev) {
-                const parts = [];
-                parts.push(`⚠️ ZIP update detected at ${meta.url}`);
-                if (prev.etag !== meta.etag) parts.push(`• ETag changed: ${prev.etag || 'none'} → ${meta.etag || 'none'}`);
-                if (prev.lastModified !== meta.lastModified) parts.push(`• Last-Modified: ${prev.lastModified || 'none'} → ${meta.lastModified || 'none'}`);
-                if (prev.size !== meta.size) parts.push(`• Size: ${prev.size || 'unknown'} → ${meta.size || 'unknown'} bytes`);
 
-                // File-level changes if available
+            if (res.available && prev) {
+                // If we can inspect changes, gather file lists
                 if (res.changes) {
                     const { added = [], removed = [], modified = [] } = res.changes;
-                    const total = (added.length || 0) + (removed.length || 0) + (modified.length || 0);
-                    parts.push(`• Files changed: ${total}  (Added: ${added.length}, Removed: ${removed.length}, Modified: ${modified.length})`);
+                    const all = [...added, ...removed, ...modified].map(f => f.trim()).filter(Boolean);
+                    const relevant = all.filter(f => f.startsWith('commands/') || f === 'index.js' || f.endsWith('/index.js') || f.includes('/index.js'));
 
-                    const maxShow = 60; // limit items shown per category
-                    if (added.length) parts.push(`\n+ Added (${added.length}):\n${added.slice(0, maxShow).join('\n')}${added.length > maxShow ? `\n...and ${added.length - maxShow} more` : ''}`);
-                    if (removed.length) parts.push(`\n- Removed (${removed.length}):\n${removed.slice(0, maxShow).join('\n')}${removed.length > maxShow ? `\n...and ${removed.length - maxShow} more` : ''}`);
-                    if (modified.length) parts.push(`\n~ Modified (${modified.length}):\n${modified.slice(0, maxShow).join('\n')}${modified.length > maxShow ? `\n...and ${modified.length - maxShow} more` : ''}`);
+                    let msg = '';
+                    if (relevant.length === 0) {
+                        msg = `⚠️ *ZIP update available!*\n_No changes detected in *commands/* or *index.js._\nFiles changed: ${all.length}\n\nUse *.update* to apply changes.`;
+                    } else {
+                        const maxShow = 30;
+                        const shown = relevant.slice(0, maxShow);
+                        const more = relevant.length - shown.length;
+                        msg = `⚠️ *ZIP update available!*\n*Files changed in commands/index:* (${relevant.length})\n${shown.map(f => `• ${f}`).join('\n')}${more > 0 ? `\n...and ${more} more` : ''}\n\nUse *.update* to apply changes.`;
+                    }
+
+                    await sock.sendMessage(chatId, { text: msg }, { quoted: message });
+                    return;
                 } else {
-                    parts.push('• File-level diff not available (could not inspect ZIP contents).');
+                    await sock.sendMessage(chatId, { text: `⚠️ ZIP update available at ${meta.url}, but file-level inspection not available. Use *.update* to apply.` }, { quoted: message });
+                    return;
                 }
-
-                await sock.sendMessage(chatId, { text: parts.join('\n') }, { quoted: message });
-                return;
             } else if (res.available && !prev) {
-                await sock.sendMessage(chatId, { text: `⚠️ ZIP update metadata recorded for ${meta.url}. Next run will be able to detect changes.` }, { quoted: message });
+                await sock.sendMessage(chatId, { text: `⚠️ ZIP update detected at ${meta.url}. Metadata recorded; file diff will be available next check.` }, { quoted: message });
                 return;
             } else {
-                await sock.sendMessage(chatId, { text: `✅ No ZIP update available. URL: ${meta.url}\nLast-Modified: ${meta.lastModified || 'unknown'}` }, { quoted: message });
+                await sock.sendMessage(chatId, { text: `✅ No ZIP update available.` }, { quoted: message });
                 return;
             }
         }
