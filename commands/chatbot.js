@@ -76,7 +76,7 @@ async function handleChatbotMessage(sock, chatId, message) {
     const userText = extractMessageText(message);
     if (!userText) return; // no text → skip
 
-    console.log(`[Chatbot] Processing in \( {chatId}: " \){userText.substring(0, 70)}${userText.length > 70 ? '...' : ''}"`);
+    console.log(`[Chatbot] Processing in ${chatId}: "${userText.substring(0, 70)}${userText.length > 70 ? '...' : ''}"`);
 
     // Show typing indicator + small natural delay
     try {
@@ -94,7 +94,7 @@ async function handleChatbotMessage(sock, chatId, message) {
 
     // Try GET first (original style)
     try {
-      const getUrl = `\( {baseUrl}?q= \){encoded}`;
+      const getUrl = `${baseUrl}?q=${encoded}`;
       const res = await fetch(getUrl, {
         method: 'GET',
         headers: { 'Accept': 'application/json' },
@@ -110,22 +110,47 @@ async function handleChatbotMessage(sock, chatId, message) {
       console.log('GET failed:', e.message);
     }
 
-    // Fallback to POST (original fallback)
+    // Fallback to POST (try both `prompt` and `text`, and log keys returned)
     if (!apiResult) {
       try {
         const res = await fetch(baseUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ prompt })
+          body: JSON.stringify({ prompt, text: prompt })
         });
 
         if (res.ok) {
           const data = await res.json();
+          console.log('[Chatbot] POST API returned keys:', data && typeof data === 'object' ? Object.keys(data) : typeof data);
           apiResult = data?.message || data?.data || data?.answer || data?.result || 
                       data?.response || (typeof data === 'string' ? data : null);
         }
       } catch (e) {
         console.log('POST failed:', e.message);
+      }
+    }
+
+    // Additional public API fallbacks used elsewhere in this project
+    if (!apiResult) {
+      const apis = [
+        `https://zellapi.autos/ai/chatbot?text=${encodeURIComponent(userText)}`,
+        `https://api.ryzendesu.vip/api/ai/gemini?text=${encodeURIComponent(userText)}`,
+        `https://vapis.my.id/api/gemini?q=${encodeURIComponent(userText)}`
+      ];
+      for (const api of apis) {
+        try {
+          const res = await fetch(api);
+          if (!res.ok) { console.log('[Chatbot] Fallback API not ok:', api, res.status); continue; }
+          const data = await res.json();
+          apiResult = data?.message || data?.data || data?.answer || data?.result || data?.response || (typeof data === 'string' ? data : null);
+          if (apiResult) {
+            console.log('[Chatbot] Fallback API succeeded:', api);
+            break;
+          }
+        } catch (e) {
+          console.log('[Chatbot] Fallback api failed:', api, e.message);
+          continue;
+        }
       }
     }
 
@@ -139,6 +164,7 @@ async function handleChatbotMessage(sock, chatId, message) {
     // Send response INTACT (only trim whitespace)
     const cleanResponse = (apiResult || '').toString().trim();
 
+    console.log(`[Chatbot] Replying to ${chatId} (${cleanResponse.length} chars)`);
     await sock.sendMessage(chatId, { text: cleanResponse }, { quoted: message });
 
   } catch (err) {
