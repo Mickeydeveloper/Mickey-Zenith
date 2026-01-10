@@ -114,6 +114,7 @@ const spotifyCommand = require('./commands/spotify');
 const playCommand = require('./commands/play');
 const tiktokCommand = require('./commands/tiktok');
 const aiCommand = require('./commands/ai');
+const { handleChatbotMessage, groupChatbotToggleCommand } = require('./commands/chatbot');
 const urlCommand = require('./commands/url');
 const { handleTranslateCommand } = require('./commands/translate');
 const { addCommandReaction, handleAreactCommand } = require('./lib/reactions');
@@ -488,7 +489,14 @@ async function handleMessages(sock, messageUpdate, printLog) {
                     await handleMentionDetection(sock, chatId, message);
                     if (typeof handleAntiStatusMention === 'function') await handleAntiStatusMention(sock, chatId, message);
                     
-                    // Chatbot feature removed
+                    // Chatbot handling: if enabled for this group, try to respond when addressed
+                    try {
+                        if (typeof handleChatbotMessage === 'function') {
+                            await handleChatbotMessage(sock, chatId, message, userMessage);
+                        }
+                    } catch (e) {
+                        console.error('handleChatbotMessage error:', e?.message || e);
+                    }
                 }
                 return;
             }
@@ -684,6 +692,12 @@ async function handleMessages(sock, messageUpdate, printLog) {
                     await pmblockerCommand(sock, chatId, message, args);
                 }
                 commandExecuted = true;
+                break;
+            case userMessage.startsWith('.chatbot'):
+                {
+                    const args = userMessage.split(' ').slice(1).join(' ');
+                    await groupChatbotToggleCommand(sock, chatId, message, args);
+                }
                 break;
             case userMessage === '.owner':
                 await ownerCommand(sock, chatId);
