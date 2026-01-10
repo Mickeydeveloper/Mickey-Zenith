@@ -30,9 +30,7 @@ function saveState(state) {
 
 function isEnabledForChat(state, chatId) {
   if (!state || !chatId) return false;
-  if (chatId.endsWith('@g.us')) {
-    return !!state.perGroup?.[chatId];
-  }
+  if (chatId.endsWith('@g.us')) return !!state.perGroup?.[chatId];
   return !!state.private;
 }
 
@@ -41,28 +39,28 @@ function extractMessageText(message) {
 
   const msg = message.message;
 
-  // Most common cases first
+  // Plain text
   if (msg.conversation) return msg.conversation.trim();
+  
+  // Reply/quoted/extended text
   if (msg.extendedTextMessage?.text) return msg.extendedTextMessage.text.trim();
   
-  // Media with captions
+  // Media captions
   if (msg.imageMessage?.caption) return msg.imageMessage.caption.trim();
   if (msg.videoMessage?.caption) return msg.videoMessage.caption.trim();
   if (msg.documentMessage?.caption) return msg.documentMessage.caption.trim();
-  if (msg.stickerMessage?.caption) return msg.stickerMessage.caption.trim(); // rare
 
-  // Interactive / buttons / templates
-  if (msg.buttonsMessage?.text) return msg.buttonsMessage.text.trim();
-  if (msg.buttonsMessage?.headerText) return msg.buttonsMessage.headerText.trim();
+  // Buttons & interactive
+  if (msg.buttonsMessage?.text || msg.buttonsMessage?.headerText) {
+    return (msg.buttonsMessage.text || msg.buttonsMessage.headerText).trim();
+  }
   if (msg.templateMessage?.hydratedTemplate?.hydratedContentText) {
     return msg.templateMessage.hydratedTemplate.hydratedContentText.trim();
   }
   if (msg.interactiveMessage?.body?.text) return msg.interactiveMessage.body.text.trim();
-  if (msg.listMessage?.description) return msg.listMessage.description.trim();
-  if (msg.listMessage?.title) return msg.listMessage.title.trim(); // fallback
 
-  // Quoted / forwarded / very rare cases
-  if (msg.extendedTextMessage?.description) return msg.extendedTextMessage.description.trim();
+  // List fallback
+  if (msg.listMessage?.description) return msg.listMessage.description.trim();
 
   return '';
 }
@@ -70,179 +68,145 @@ function extractMessageText(message) {
 async function handleChatbotMessage(sock, chatId, message) {
   try {
     if (!chatId) return;
-    if (message.key?.fromMe) return; // ignore own messages
+    if (message.key?.fromMe) return; // don't reply to self
 
     const state = loadState();
     if (!isEnabledForChat(state, chatId)) return;
 
-    const text = extractMessageText(message);
-    if (!text || text.length < 1) return; // no text → skip
+    const userText = extractMessageText(message);
+    if (!userText) return; // no text → skip
 
-    // Optional: ignore very short messages or commands
-    // if (text.length <= 2 || text.startsWith('.')) return;
+    console.log(`[Chatbot] Processing in \( {chatId}: " \){userText.substring(0, 70)}${userText.length > 70 ? '...' : ''}"`);
 
-    console.log(`[Mickey] \( {chatId} → " \){text.substring(0, 60)}${text.length > 60 ? '...' : ''}"`);
-
-    // Show typing indicator
+    // Show typing indicator + small natural delay
     try {
       await sock.sendPresenceUpdate('composing', chatId);
-      await new Promise(r => setTimeout(r, 800 + Math.random() * 1200)); // natural delay
-    } catch {}
+      await new Promise(r => setTimeout(r, 700 + Math.random() * 900));
+    } catch (e) {}
 
-    const prompt = `You are Mickey, a helpful, friendly and slightly funny assistant from Tanzania. 
-Always reply in a natural, warm way. Include your own short opinion and one practical suggestion at the end.
-Keep answers clear and not too long.
+    // Original prompt style + instruction to reply naturally
+    const prompt = `You are Mickey, a helpful and friendly assistant. When replying, answer in a clear, helpful way and include your own opinion and a short suggestion at the end to ensure the solution works perfectly.\n\nUser: ${userText}`;
 
-User: ${text}`;
+    const encoded = encodeURIComponent(prompt);
+    const baseUrl = 'https://okatsu-rolezapiiz.vercel.app/ai/gemini';
 
-    const encodedPrompt = encodeURIComponent(prompt);
-    let responseText = null;
+    let apiResult = null;
 
-    // === 2026 WORKING PROXY OPTIONS (pick one - test them) ===
-    // Best: deploy your own → https://github.com/DavidKk/Vercel-Gemini-Proxy
-    // Public ones (may die any day):
-    const proxies = [
-      `https://gemini-proxy-psi.vercel.app/api/gemini?q=${encodedPrompt}`,
-      `https://free-gemini-api-2025.vercel.app/gemini?q=${encodedPrompt}`,
-      `https://gemini-flash-api.vercel.app/api?q=${encodedPrompt}`
-    ];
+    // Try GET first (original style)
+    try {
+      const getUrl = `\( {baseUrl}?q= \){encoded}`;
+      const res = await fetch(getUrl, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(15000)
+      });
 
-    for (const url of proxies) {
-      try {
-        const res = await fetch(url, {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-          signal: AbortSignal.timeout(12000) // 12s timeout
-        });
-
-        if (!res.ok) continue;
-
+      if (res.ok) {
         const data = await res.json();
-        responseText = 
-          data?.response ||
-          data?.message ||
-          data?.text ||
-          data?.result ||
-          data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-          (typeof data === 'string' ? data : null);
-
-        if (responseText) break;
-      } catch (e) {
-        console.log(`Proxy failed (${url}):`, e.message);
+        apiResult = data?.message || data?.data || data?.answer || data?.result || 
+                    data?.response || (typeof data === 'string' ? data : null);
       }
+    } catch (e) {
+      console.log('GET failed:', e.message);
     }
 
-    // POST fallback (some proxies prefer POST)
-    if (!responseText) {
+    // Fallback to POST (original fallback)
+    if (!apiResult) {
       try {
-        const res = await fetch('https://gemini-proxy-psi.vercel.app/api/gemini', {
+        const res = await fetch(baseUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt, model: 'gemini-1.5-flash' })
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ prompt })
         });
 
         if (res.ok) {
           const data = await res.json();
-          responseText = data?.response || data?.message || data?.text;
+          apiResult = data?.message || data?.data || data?.answer || data?.result || 
+                      data?.response || (typeof data === 'string' ? data : null);
         }
       } catch (e) {
-        console.error('POST fallback failed:', e);
+        console.log('POST failed:', e.message);
       }
     }
 
-    if (!responseText) {
-      responseText = 'Pole sana! Mickey ako busy kidogo sasa hivi 😅 Jaribu tena baada ya dakika chache!';
+    if (!apiResult) {
+      await sock.sendMessage(chatId, { 
+        text: '❌ Sorry, failed to get response from AI. Try again later!' 
+      }, { quoted: message });
+      return;
     }
 
-    // Clean response
-    responseText = responseText.trim()
-      .replace(/^Mickey:\s*/i, '')
-      .replace(/\[.*?\]/g, '') // remove random tags some proxies add
-      .trim();
+    // Send response INTACT (only trim whitespace)
+    const cleanResponse = (apiResult || '').toString().trim();
 
-    await sock.sendMessage(chatId, { text: responseText }, { quoted: message });
+    await sock.sendMessage(chatId, { text: cleanResponse }, { quoted: message });
 
   } catch (err) {
-    console.error('Mickey Chatbot Error:', err?.message || err);
+    console.error('Chatbot error:', err?.message || err);
   }
 }
 
 async function groupChatbotToggleCommand(sock, chatId, message, args) {
   try {
     const argStr = (args || '').trim().toLowerCase();
-    const state = loadState();
 
-    // Private mode (owner only)
+    // Private toggle (owner only)
     if (argStr.startsWith('private')) {
       const parts = argStr.split(/\s+/);
       const sub = parts[1];
-
       if (!sub || !['on', 'off', 'status'].includes(sub)) {
-        return sock.sendMessage(chatId, { 
-          text: 'Tumia: .chatbot private on|off|status (Owner tu)' 
-        }, { quoted: message });
+        return sock.sendMessage(chatId, { text: 'Usage: .chatbot private on|off|status (Owner only)' }, { quoted: message });
       }
 
       const sender = message.key.participant || message.key.remoteJid;
       const isOwner = message.key.fromMe || await require('../lib/isOwner')(sender, sock, chatId);
-      if (!isOwner) {
-        return sock.sendMessage(chatId, { text: 'Hii ni kwa Owner/Sudo tu!' }, { quoted: message });
-      }
+      if (!isOwner) return sock.sendMessage(chatId, { text: 'Only Owner or Sudo can toggle private chatbot.' }, { quoted: message });
 
+      const state = loadState();
       if (sub === 'status') {
-        return sock.sendMessage(chatId, { 
-          text: `Private mode (DMs) iko **${state.private ? 'ON' : 'OFF'}** sasa.` 
-        }, { quoted: message });
+        return sock.sendMessage(chatId, { text: `Private chatbot is currently *${state.private ? 'ON' : 'OFF'}*.` }, { quoted: message });
       }
 
       state.private = sub === 'on';
       saveState(state);
-      return sock.sendMessage(chatId, { 
-        text: `Private mode (DMs) sasa iko **${state.private ? 'ON' : 'OFF'}**!` 
-      }, { quoted: message });
+      return sock.sendMessage(chatId, { text: `Private chatbot is now *${state.private ? 'ON' : 'OFF'}*.` }, { quoted: message });
     }
 
-    // Group mode
+    // Group toggle
     if (!chatId.endsWith('@g.us')) {
-      return sock.sendMessage(chatId, { 
-        text: 'Tumia .chatbot on|off|status (group) au .chatbot private ... (owner)' 
-      }, { quoted: message });
+      return sock.sendMessage(chatId, { text: 'This command works in groups or use .chatbot private ...' }, { quoted: message });
     }
 
     const sender = message.key.participant || message.key.remoteJid;
-    const { isSenderAdmin } = await isAdmin(sock, chatId, sender);
-
-    if (!isSenderAdmin && !message.key.fromMe) {
-      return sock.sendMessage(chatId, { text: 'Admins wa group tu wanaweza kuwasha/zima!' }, { quoted: message });
+    const adminInfo = await isAdmin(sock, chatId, sender);
+    if (!adminInfo.isSenderAdmin && !message.key.fromMe) {
+      return sock.sendMessage(chatId, { text: 'Only group admins can toggle chatbot.' }, { quoted: message });
     }
 
-    if (!['on', 'off', 'status'].includes(argStr)) {
-      return sock.sendMessage(chatId, { 
-        text: 'Tumia: .chatbot on | off | status' 
-      }, { quoted: message });
+    const onoff = argStr;
+    if (!onoff || !['on', 'off', 'status'].includes(onoff)) {
+      return sock.sendMessage(chatId, { text: 'Usage: .chatbot on|off|status' }, { quoted: message });
     }
 
-    if (argStr === 'status') {
+    const state = loadState();
+    state.perGroup = state.perGroup || {};
+
+    if (onoff === 'status') {
       const enabled = !!state.perGroup[chatId];
-      return sock.sendMessage(chatId, { 
-        text: `Mickey chatbot iko **${enabled ? 'ON' : 'OFF'}** hapa group.` 
-      }, { quoted: message });
+      return sock.sendMessage(chatId, { text: `Chatbot is currently *${enabled ? 'ON' : 'OFF'}* for this group.` }, { quoted: message });
     }
 
-    state.perGroup[chatId] = argStr === 'on';
+    state.perGroup[chatId] = onoff === 'on';
     saveState(state);
 
     return sock.sendMessage(chatId, { 
-      text: `Mickey chatbot sasa iko **${state.perGroup[chatId] ? 'ON' : 'OFF'}** kwa group hii! 🎉` 
+      text: `Chatbot is now ${state.perGroup[chatId] ? 'ON' : 'OFF'} for this group!` 
     }, { quoted: message });
 
   } catch (e) {
-    console.error('Toggle command error:', e);
-    return sock.sendMessage(chatId, { text: 'Hitilafu imetokea wakati wa kubadilisha mode 😓' }, { quoted: message });
+    console.error('Toggle error:', e);
+    sock.sendMessage(chatId, { text: 'Failed to toggle chatbot.' }, { quoted: message });
   }
 }
 
-module.exports = {
-  handleChatbotMessage,
-  groupChatbotToggleCommand
-};
+module.exports = { handleChatbotMessage, groupChatbotToggleCommand };
