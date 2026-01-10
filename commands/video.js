@@ -1,5 +1,9 @@
 const axios = require('axios');
 const yts = require('yt-search');
+const ytdl = require('ytdl-core');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const AXIOS_DEFAULTS = {
     timeout: 60000,
@@ -58,6 +62,44 @@ async function getVredenVideoByUrl(youtubeUrl) {
     throw new Error('Vreden API failed');
 }
 
+async function getYtdlVideoByUrl(youtubeUrl) {
+    // Only attempt for YouTube URLs
+    try {
+        if (!ytdl.validateURL(youtubeUrl)) throw new Error('Not a valid YouTube URL');
+        const info = await ytdl.getInfo(youtubeUrl);
+        const formats = ytdl.filterFormats(info.formats, 'videoandaudio');
+
+        // Prefer mp4 container formats
+        const mp4Formats = formats.filter(f => (f.container === 'mp4' || f.mimeType?.includes('mp4')) && f.contentLength);
+
+        // Try to pick a format <= 100MB, otherwise pick highest available
+        const MAX_BYTES = 100 * 1024 * 1024;
+        let chosen = mp4Formats.find(f => Number(f.contentLength) <= MAX_BYTES);
+        if (!chosen) chosen = mp4Formats.sort((a, b) => (Number(b.contentLength || 0) - Number(a.contentLength || 0)))[0] || formats[0];
+        if (!chosen || !chosen.url) throw new Error('No suitable format');
+
+        // Download to temp file
+        const tmpDir = path.join(process.cwd(), 'temp');
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+        const titleSafe = (info.videoDetails?.title || 'video').replace(/[\\/:*?"<>|]+/g, '').slice(0, 120) || 'video';
+        const tmpFile = path.join(tmpDir, `${Date.now()}-${Math.random().toString(36).slice(2,8)}-${titleSafe}.${(chosen.container || 'mp4')}`);
+
+        await new Promise((resolve, reject) => {
+            const stream = ytdl.downloadFromInfo(info, { format: chosen });
+            const fileStream = fs.createWriteStream(tmpFile);
+            stream.pipe(fileStream);
+            let errored = false;
+            stream.on('error', (e) => { errored = true; reject(e); });
+            fileStream.on('finish', () => { if (!errored) resolve(); });
+            fileStream.on('error', (e) => { errored = true; reject(e); });
+        });
+
+        return { download: tmpFile, title: info.videoDetails?.title || 'Video', mime: 'video/mp4', isFile: true };
+    } catch (e) {
+        throw new Error('ytdl failed: ' + (e.message || e));
+    }
+}
+
 async function videoCommand(sock, chatId, message) {
     try {
         const text = message.message?.conversation || message.message?.extendedTextMessage?.text || '';
@@ -105,6 +147,9 @@ async function videoCommand(sock, chatId, message) {
             { fn: () => getVredenVideoByUrl(videoUrl), name: 'Vreden' }
         ];
 
+        // Add ytdl fallback as final attempt if URL is a YouTube link
+        apiAttempts.push({ fn: () => getYtdlVideoByUrl(videoUrl), name: 'ytdl' });
+
         for (const attempt of apiAttempts) {
             try {
                 videoData = await attempt.fn();
@@ -126,12 +171,28 @@ async function videoCommand(sock, chatId, message) {
         const mime = videoData.mime || 'video/mp4';
         const ext = (mime.split('/')[1] || 'mp4').split('+')[0];
 
-        await sock.sendMessage(chatId, {
-            video: { url: videoData.download },
-            mimetype: mime,
-            fileName: `${safeTitle}.${ext}`,
-            caption: `*${safeTitle}*\n\n> *Mickey Tanzanite Era* 💎`
-        }, { quoted: message });
+        if (videoData.isFile) {
+            // Send local file stream and then cleanup
+            const stream = fs.createReadStream(videoData.download);
+            try {
+                await sock.sendMessage(chatId, {
+                    video: stream,
+                    mimetype: mime,
+                    fileName: `${safeTitle}.${ext}`,
+                    caption: `*${safeTitle}*\n\n> *Mickey Tanzanite Era* 💎`
+                }, { quoted: message });
+            } finally {
+                // attempt to remove temp file
+                try { fs.unlinkSync(videoData.download); } catch (e) {}
+            }
+        } else {
+            await sock.sendMessage(chatId, {
+                video: { url: videoData.download },
+                mimetype: mime,
+                fileName: `${safeTitle}.${ext}`,
+                caption: `*${safeTitle}*\n\n> *Mickey Tanzanite Era* 💎`
+            }, { quoted: message });
+        }
 
     } catch (error) {
         console.error('[VIDEO] Error:', error.message);

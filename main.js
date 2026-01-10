@@ -154,19 +154,7 @@ async function handleMessages(sock, messageUpdate, printLog) {
         const chatIdEarly = message.key.remoteJid;
         const isGroupEarly = chatIdEarly && chatIdEarly.toString().endsWith('@g.us');
 
-        // Handle autoreply functionality only for real private chats (standard user JIDs)
-        // Avoid invoking autoreply for linked/device IDs like '@lid' which can interfere with command processing
-        if (!isGroupEarly && String(chatIdEarly).endsWith('@s.whatsapp.net')) {
-            try {
-                console.log('[main] invoking handleAutoreply for', chatIdEarly);
-                await handleAutoreply(sock, message);
-            } catch (e) {
-                console.error('[main] handleAutoreply error:', e);
-            }
-        } else {
-            // skip calling handleAutoreply for group messages to avoid noisy logs
-            // but still honor other group handlers below
-        }
+        // Autoreply feature removed — no action taken here.
 
         // Store message for antidelete feature
         if (message.message) {
@@ -516,7 +504,7 @@ async function handleMessages(sock, messageUpdate, printLog) {
         const isAdminCommand = adminCommands.some(cmd => userMessage.startsWith(cmd));
 
         // List of owner commands
-        const ownerCommands = ['.mode', '.autostatus', '.antidelete', '.cleartmp', '.setpp', '.clearsession', '.areact', '.autoreact', '.autotyping', '.autoread', '.autoreply', '.pmblocker'];
+        const ownerCommands = ['.mode', '.autostatus', '.antidelete', '.cleartmp', '.setpp', '.clearsession', '.areact', '.autoreact', '.autotyping', '.autoread', '.pmblocker'];
         const isOwnerCommand = ownerCommands.some(cmd => userMessage.startsWith(cmd));
 
         let isSenderAdmin = false;
@@ -1079,10 +1067,7 @@ async function handleMessages(sock, messageUpdate, printLog) {
                 await autoreadCommand(sock, chatId, message);
                 commandExecuted = true;
                 break;
-            case userMessage.startsWith('.autoreply'):
-                await autoreplyCommand(sock, chatId, message);
-                commandExecuted = true;
-                break;
+            // .autoreply command removed
             case userMessage.startsWith('.heart'):
                 await handleHeart(sock, chatId, message);
                 break;
