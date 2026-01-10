@@ -45,7 +45,7 @@ function extractBestVideo(data) {
     return null;
 }
 async function getIzumiVideoByUrl(youtubeUrl) {
-    const apiUrl = `https://api.izumi.my.id/api/download/video?url=${encodeURIComponent(youtubeUrl)}`;
+    const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     const best = extractBestVideo(res.data);
     if (best) return { download: best.url, title: res.data.title || res.data.result?.title || 'Video', mime: best.type || 'video/mp4' };
@@ -134,7 +134,7 @@ async function videoCommand(sock, chatId, message) {
         if (thumb) {
             await sock.sendMessage(chatId, {
                 image: { url: thumb },
-                caption: `*Mickey Tanzanite Era* 💎\n\n*Title:* ${videoTitle || 'Searching...'}\n*Status:* Fetching best quality...`
+                caption: `*Mickey video download* \n\n*Title:* ${videoTitle || 'Searching...'}\n*Status:* Fetching best quality...`
             }, { quoted: message });
         } else {
             await sock.sendMessage(chatId, { text: `*Mickey Tanzanite Era* 💎\n\n*Title:* ${videoTitle || 'Searching...'}\n*Status:* Fetching best quality...` }, { quoted: message });
@@ -190,7 +190,7 @@ async function videoCommand(sock, chatId, message) {
                 video: { url: videoData.download },
                 mimetype: mime,
                 fileName: `${safeTitle}.${ext}`,
-                caption: `*${safeTitle}*\n\n> *Mickey Tanzanite Era* 💎`
+                caption: `*${safeTitle}*\n\n> *Mickey * `
             }, { quoted: message });
         }
 
