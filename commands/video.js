@@ -13,6 +13,8 @@ const AXIOS_DEFAULTS = {
     }
 };
 
+const MAX_DOWNLOAD_BYTES = 150 * 1024 * 1024; // 150 MB max local download (adjustable)
+
 async function tryRequest(getter, attempts = 3) {
     let lastError;
     for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -67,22 +69,28 @@ async function getYtdlVideoByUrl(youtubeUrl) {
     try {
         if (!ytdl.validateURL(youtubeUrl)) throw new Error('Not a valid YouTube URL');
         const info = await ytdl.getInfo(youtubeUrl);
-        const formats = ytdl.filterFormats(info.formats, 'videoandaudio');
+        // prefer combined audio+video formats
+        const formats = ytdl.filterFormats(info.formats, 'videoandaudio') || [];
 
-        // Prefer mp4 container formats
-        const mp4Formats = formats.filter(f => (f.container === 'mp4' || f.mimeType?.includes('mp4')) && f.contentLength);
+        // Sort by quality (resolution + bitrate) descending
+        formats.sort((a, b) => {
+            const qa = Number(a.bitrate || a.averageBitrate || 0);
+            const qb = Number(b.bitrate || b.averageBitrate || 0);
+            return qb - qa;
+        });
 
-        // Try to pick a format <= 100MB, otherwise pick highest available
-        const MAX_BYTES = 100 * 1024 * 1024;
-        let chosen = mp4Formats.find(f => Number(f.contentLength) <= MAX_BYTES);
-        if (!chosen) chosen = mp4Formats.sort((a, b) => (Number(b.contentLength || 0) - Number(a.contentLength || 0)))[0] || formats[0];
-        if (!chosen || !chosen.url) throw new Error('No suitable format');
+        // Prefer mp4 containers if possible
+        const mp4Preferred = formats.filter(f => (f.container === 'mp4' || (f.mimeType || '').includes('mp4')) && f.contentLength);
 
-        // Download to temp file
+        // Try to pick highest quality <= MAX_DOWNLOAD_BYTES, otherwise pick highest available
+        let chosen = mp4Preferred.find(f => Number(f.contentLength) <= MAX_DOWNLOAD_BYTES) || mp4Preferred[0] || formats.find(f => Number(f.contentLength) <= MAX_DOWNLOAD_BYTES) || formats[0];
+        if (!chosen) throw new Error('No suitable format from ytdl');
+
         const tmpDir = path.join(process.cwd(), 'temp');
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
         const titleSafe = (info.videoDetails?.title || 'video').replace(/[\\/:*?"<>|]+/g, '').slice(0, 120) || 'video';
-        const tmpFile = path.join(tmpDir, `${Date.now()}-${Math.random().toString(36).slice(2,8)}-${titleSafe}.${(chosen.container || 'mp4')}`);
+        const ext = chosen.container || ((chosen.mimeType || 'video/mp4').split('/')[1] || 'mp4').split(';')[0].split('+')[0];
+        const tmpFile = path.join(tmpDir, `${Date.now()}-${Math.random().toString(36).slice(2,8)}-${titleSafe}.${ext}`);
 
         await new Promise((resolve, reject) => {
             const stream = ytdl.downloadFromInfo(info, { format: chosen });
@@ -94,10 +102,45 @@ async function getYtdlVideoByUrl(youtubeUrl) {
             fileStream.on('error', (e) => { errored = true; reject(e); });
         });
 
-        return { download: tmpFile, title: info.videoDetails?.title || 'Video', mime: 'video/mp4', isFile: true };
+        const mime = (chosen.mimeType && chosen.mimeType.split(';')[0]) || 'video/mp4';
+        return { download: tmpFile, title: info.videoDetails?.title || 'Video', mime, isFile: true };
     } catch (e) {
         throw new Error('ytdl failed: ' + (e.message || e));
     }
+}
+
+// Download a remote URL to a temp file (with size guard)
+async function downloadRemoteToTemp(url, maxBytes = MAX_DOWNLOAD_BYTES) {
+    const tmpDir = path.join(process.cwd(), 'temp');
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    const tmpFile = path.join(tmpDir, `${Date.now()}-${Math.random().toString(36).slice(2,8)}.tmp`);
+
+    const res = await axios.get(url, { ...AXIOS_DEFAULTS, responseType: 'stream', maxRedirects: 5 });
+    const length = Number(res.headers['content-length'] || 0);
+    if (length && length > maxBytes) {
+        res.data.destroy();
+        throw new Error(`Remote file too large (${Math.round(length/1024/1024)} MB)`);
+    }
+
+    return await new Promise((resolve, reject) => {
+        const writer = fs.createWriteStream(tmpFile);
+        let downloaded = 0;
+        let aborted = false;
+        res.data.on('data', chunk => {
+            downloaded += chunk.length;
+            if (downloaded > maxBytes) {
+                aborted = true;
+                res.data.destroy();
+                writer.destroy();
+                try { fs.unlinkSync(tmpFile); } catch (e) {}
+                reject(new Error('Downloaded file exceeds max allowed size'));
+            }
+        });
+        res.data.pipe(writer);
+        res.data.on('error', err => { aborted = true; try { writer.destroy(); } catch (e) {} reject(err); });
+        writer.on('finish', () => { if (!aborted) resolve(tmpFile); });
+        writer.on('error', err => { try { fs.unlinkSync(tmpFile); } catch (e) {} reject(err); });
+    });
 }
 
 async function videoCommand(sock, chatId, message) {
@@ -171,9 +214,24 @@ async function videoCommand(sock, chatId, message) {
         const mime = videoData.mime || 'video/mp4';
         const ext = (mime.split('/')[1] || 'mp4').split('+')[0];
 
+        let localFilePath = null;
+        let sentViaUrl = false;
+
         if (videoData.isFile) {
-            // Send local file stream and then cleanup
-            const stream = fs.createReadStream(videoData.download);
+            localFilePath = videoData.download;
+        } else {
+            // attempt to download remote URL to a temp file for reliable delivery
+            try {
+                localFilePath = await downloadRemoteToTemp(videoData.download, MAX_DOWNLOAD_BYTES);
+            } catch (err) {
+                console.warn('[VIDEO] remote download failed:', err && err.message ? err.message : err);
+                // fallback to sending remote URL (may fail on some clients)
+                sentViaUrl = true;
+            }
+        }
+
+        if (localFilePath) {
+            const stream = fs.createReadStream(localFilePath);
             try {
                 await sock.sendMessage(chatId, {
                     video: stream,
@@ -182,10 +240,9 @@ async function videoCommand(sock, chatId, message) {
                     caption: `*${safeTitle}*\n\n> *Mickey Tanzanite Era* 💎`
                 }, { quoted: message });
             } finally {
-                // attempt to remove temp file
-                try { fs.unlinkSync(videoData.download); } catch (e) {}
+                try { fs.unlinkSync(localFilePath); } catch (e) {}
             }
-        } else {
+        } else if (sentViaUrl) {
             await sock.sendMessage(chatId, {
                 video: { url: videoData.download },
                 mimetype: mime,
