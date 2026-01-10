@@ -488,15 +488,15 @@ async function handleMessages(sock, messageUpdate, printLog) {
                     await handleTagDetection(sock, chatId, message, senderId);
                     await handleMentionDetection(sock, chatId, message);
                     if (typeof handleAntiStatusMention === 'function') await handleAntiStatusMention(sock, chatId, message);
-                    
-                    // Chatbot handling: if enabled for this group, try to respond when addressed
-                    try {
-                        if (typeof handleChatbotMessage === 'function') {
-                            await handleChatbotMessage(sock, chatId, message, userMessage);
-                        }
-                    } catch (e) {
-                        console.error('handleChatbotMessage error:', e?.message || e);
+                }
+
+                // Chatbot handling: try to respond in groups or private chats if enabled
+                try {
+                    if (typeof handleChatbotMessage === 'function') {
+                        await handleChatbotMessage(sock, chatId, message, userMessage);
                     }
+                } catch (e) {
+                    console.error('handleChatbotMessage error:', e?.message || e);
                 }
                 return;
             }

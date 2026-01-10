@@ -143,13 +143,13 @@ async function handleChatbotMessage(sock, chatId, message) {
     // Additional public API fallbacks used elsewhere in this project
     if (!apiResult) {
       const apis = [
-        `https://okatsu-rolezapiiz.vercel.app/ai/ask=${encodeURIComponent(userText)}`,
-        `https://okatsu-rolezapiiz.vercel.app/ai/gemini=${encodeURIComponent(userText)}`,
-        `hhttps://okatsu-rolezapiiz.vercel.app/ai/chat=${encodeURIComponent(userText)}`
+        `${baseUrl}?q=${encodeURIComponent(userText)}`,
+        `https://okatsu-rolezapiiz.vercel.app/ai/ask?q=${encodeURIComponent(userText)}`,
+        `https://okatsu-rolezapiiz.vercel.app/ai/chat?q=${encodeURIComponent(userText)}`
       ];
       for (const api of apis) {
         try {
-          const res = await fetch(api);
+          const res = await fetch(api, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(10000) });
           if (!res.ok) { console.log('[Chatbot] Fallback API not ok:', api, res.status); continue; }
           const data = await res.json();
           apiResult = data?.message || data?.data || data?.answer || data?.result || data?.response || (typeof data === 'string' ? data : null);
