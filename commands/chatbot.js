@@ -28,9 +28,19 @@ function saveState(state) {
   }
 }
 
-function isEnabledForChat(state, chatId) {
+async function isEnabledForChat(state, chatId) {
   if (!state || !chatId) return false;
-  if (chatId.endsWith('@g.us')) return !!state.perGroup?.[chatId];
+  if (chatId.endsWith('@g.us')) {
+    // prefer the perGroup in this file, but fall back to global userGroupData if present
+    if (state.perGroup?.[chatId]) return true;
+    try {
+      const lib = require('../lib/index');
+      const cfg = await lib.getChatbot(chatId);
+      return !!(cfg && cfg.enabled);
+    } catch (e) {
+      return false;
+    }
+  }
   return !!state.private;
 }
 
@@ -71,7 +81,7 @@ async function handleChatbotMessage(sock, chatId, message) {
     if (message.key?.fromMe) return; // don't reply to self
 
     const state = loadState();
-    if (!isEnabledForChat(state, chatId)) return;
+    if (!(await isEnabledForChat(state, chatId))) return;
 
     const userText = extractMessageText(message);
     if (!userText) return; // no text → skip
@@ -133,9 +143,9 @@ async function handleChatbotMessage(sock, chatId, message) {
     // Additional public API fallbacks used elsewhere in this project
     if (!apiResult) {
       const apis = [
-        `https://zellapi.autos/ai/chatbot?text=${encodeURIComponent(userText)}`,
-        `https://api.ryzendesu.vip/api/ai/gemini?text=${encodeURIComponent(userText)}`,
-        `https://vapis.my.id/api/gemini?q=${encodeURIComponent(userText)}`
+        `https://okatsu-rolezapiiz.vercel.app/ai/ask=${encodeURIComponent(userText)}`,
+        `https://okatsu-rolezapiiz.vercel.app/ai/gemini=${encodeURIComponent(userText)}`,
+        `hhttps://okatsu-rolezapiiz.vercel.app/ai/chat=${encodeURIComponent(userText)}`
       ];
       for (const api of apis) {
         try {
@@ -218,12 +228,21 @@ async function groupChatbotToggleCommand(sock, chatId, message, args) {
     state.perGroup = state.perGroup || {};
 
     if (onoff === 'status') {
-      const enabled = !!state.perGroup[chatId];
+      const lib = require('../lib/index');
+      const cfg = await lib.getChatbot(chatId);
+      const enabled = !!state.perGroup[chatId] || !!(cfg && cfg.enabled);
       return sock.sendMessage(chatId, { text: `Chatbot is currently *${enabled ? 'ON' : 'OFF'}* for this group.` }, { quoted: message });
     }
 
+    const lib = require('../lib/index');
     state.perGroup[chatId] = onoff === 'on';
     saveState(state);
+    try {
+      if (state.perGroup[chatId]) await lib.setChatbot(chatId, true);
+      else await lib.removeChatbot(chatId);
+    } catch (e) {
+      console.log('Sync userGroupData chatbot failed:', e?.message || e);
+    }
 
     return sock.sendMessage(chatId, { 
       text: `Chatbot is now ${state.perGroup[chatId] ? 'ON' : 'OFF'} for this group!` 
