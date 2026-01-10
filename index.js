@@ -107,7 +107,7 @@ async function startXeonBotInc() {
 
         // Forward outgoing messages as authentic forwarded posts from channel
         // Channel/Media info (used as the origin of forwarded posts)
-        const channelRD = { id: '120363398106360290@newsletter', name: '​𝙼𝚒𝚌𝚔𝚎𝚢 𝚃𝚊𝚗𝚣𝚊𝚗𝚒𝚝𝚎 𝙴𝚛𝚊' };
+        const channelRD = { id: '120363398106360290@newsletter', name: '​ 𝕸𝖎𝖈𝖐𝖊𝖞 𝕱𝖗𝖔𝖒 𝕿𝖆𝖓𝖟𝖆𝖓𝖎𝖆 🇹🇿' };
         try {
             const origSendMessage = XeonBotInc.sendMessage.bind(XeonBotInc);
             XeonBotInc.sendMessage = async (jid, message, options = {}) => {
