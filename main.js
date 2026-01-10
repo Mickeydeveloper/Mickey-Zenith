@@ -27,7 +27,7 @@ setInterval(() => {
 
 const settings = require('./settings');
 require('./config.js');
-const { isBanned } = require('./lib/isBanned');
+const isBanned = require('./lib/isBanned');
 const yts = require('yt-search');
 const { fetchBuffer } = require('./lib/myfunc');
 const fetch = require('node-fetch');
