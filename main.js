@@ -38,7 +38,6 @@ const { isSudo } = require('./lib/index');
 const isOwnerOrSudo = require('./lib/isOwner');
 const { autotypingCommand, isAutotypingEnabled, handleAutotypingForMessage, handleAutotypingForCommand, showTypingAfterCommand } = require('./commands/autotyping');
 const { autoreadCommand, isAutoreadEnabled, handleAutoread } = require('./commands/autoread');
-const { autoreplyCommand, isAutoreplyEnabled, handleAutoreply } = require('./commands/autoreply');
 const { autoBioCommand } = require('./commands/autobio');
 
 // Command imports
