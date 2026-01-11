@@ -1,290 +1,260 @@
-
 const fs = require('fs');
 const path = require('path');
 const isOwnerOrSudo = require('../lib/isOwner');
 
-// Config path
-const configPath = path.join(__dirname, '../data/autoStatus.json');
+const CONFIG_PATH = path.join(__dirname, '../data/autoStatus.json');
 
-// Ensure data folder exists
-if (!fs.existsSync(path.dirname(configPath))) {
-    fs.mkdirSync(path.dirname(configPath), { recursive: true });
-}
-
-// Config
-let config = {
+const DEFAULT_CONFIG = {
     enabled: true,
-    reactOn: true,
-    forwardToOwner: true
+    reactWith: '💚',
+    forwardToOwner: true,
+    forwardOnlyMedia: true,
 };
 
-// Load config
-if (fs.existsSync(configPath)) {
+let config = { ...DEFAULT_CONFIG };
+
+function loadConfig() {
     try {
-        const loaded = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-        config = { ...config, ...loaded };
-    } catch (e) {
-        console.error('Config load error:', e.message);
+        if (fs.existsSync(CONFIG_PATH)) {
+            const data = fs.readFileSync(CONFIG_PATH, 'utf-8');
+            config = { ...DEFAULT_CONFIG, ...JSON.parse(data) };
+        } else {
+            fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+            fs.writeFileSync(CONFIG_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2));
+        }
+    } catch (err) {
+        console.error('AutoStatus config load/create failed:', err.message);
     }
-} else {
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 }
 
-// Save config safely
 function saveConfig() {
     try {
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+        fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
         return true;
-    } catch (error) {
-        console.error('Config save failed:', error.message);
+    } catch (err) {
+        console.error('AutoStatus config save failed:', err.message);
         return false;
     }
 }
 
-// Get owner JID (where statuses are forwarded to)
-const settings = require('../settings');
+loadConfig();
+
+// Get owner JID
 function getOwnerJid(sock) {
-    const ownerNumber = settings.ownerNumber || process.env.OWNER_NUMBER || null;
-    if (ownerNumber) return `${ownerNumber}@s.whatsapp.net`;
-    // Fallback to the current socket's user id if nothing configured
-    return sock.user?.id?.split(':')[0] + '@s.whatsapp.net';
+    const owner =
+        require('../settings')?.ownerNumber ||
+        process.env.OWNER_NUMBER ||
+        process.env.OWNER ||
+        sock?.user?.id?.split(':')[0];
+
+    return owner ? `${owner}@s.whatsapp.net` : null;
 }
 
-// Improved: Better detection of original sender in forwarded statuses
-async function getOriginalSenderInfo(sock, message) {
-    let senderJid = message.key.participant || message.key.remoteJid || '';
-    let senderNumber = typeof senderJid === 'string' ? senderJid.split('@')[0] : '';
+// Improved sender detection - tries many contextInfo locations
+async function getBestSenderInfo(sock, m) {
+    if (!m) return { number: 'unknown', name: 'Unknown', isForwarded: false, forwardedBy: null };
 
-    let originalNumber = null;
+    const msg = m.message || {};
+    const ci = msg.imageMessage?.contextInfo ||
+               msg.videoMessage?.contextInfo ||
+               msg.extendedTextMessage?.contextInfo ||
+               m.messageStubParameters?.[0]?.contextInfo || // rare cases
+               m.contextInfo || {};
 
-    const ctx = message.message?.imageMessage?.contextInfo ||
-                message.message?.videoMessage?.contextInfo ||
-                message.message?.extendedTextMessage?.contextInfo ||
-                message.contextInfo;
+    let originalJid = null;
+    let forwardedByJid = null;
 
-    if (ctx) {
-        // If context contains participant (common when forwarded from group), prefer that
-        if (ctx.participant) originalNumber = ctx.participant.split('@')[0];
-
-        // Quoted forwarded message (some clients embed original msg in quotedMessage)
-        if (!originalNumber && ctx.quotedMessage?.key?.participant) {
-            originalNumber = ctx.quotedMessage.key.participant.split('@')[0];
-        } else if (!originalNumber && ctx.quotedMessage?.key?.remoteJid) {
-            originalNumber = ctx.quotedMessage.key.remoteJid.split('@')[0];
-        }
-
-        // Fallback to forwarded metadata
-        if (!originalNumber && (ctx.isForwarded || (ctx.forwardingScore || 0) > 0) && ctx.forwardingScore !== undefined) {
-            // Some clients set forwarded info without participant; use sender as best-effort
-            originalNumber = senderNumber;
-        }
+    // 2025–2026 common patterns
+    if (ci.participant) {
+        originalJid = ci.participant;
+    }
+    if (ci.remoteJid && ci.remoteJid.includes('@s.whatsapp.net') && !originalJid) {
+        originalJid = ci.remoteJid;
+    }
+    // Sometimes forwarded info is nested deeper
+    if (ci.quotedMessage?.contextInfo?.participant) {
+        originalJid = ci.quotedMessage.contextInfo.participant;
+    }
+    // Forwarded-by chain (who sent it to you)
+    if (ci.forwardingScore > 0 && ci.participant) {
+        forwardedByJid = ci.participant; // usually the person who forwarded it to your status view
+        if (!originalJid) originalJid = ci.participant;
     }
 
-    // Final fallback
-    if (!originalNumber) originalNumber = senderNumber;
+    const directJid = m.key?.participant || m.key?.remoteJid || 'unknown';
+    const directNumber = directJid.split('@')[0];
 
-    // Resolve display name (using socket helper if available)
+    if (!originalJid) originalJid = directJid;
+
+    const originalNumber = originalJid.split('@')[0];
+    const isForwarded = originalNumber !== directNumber;
+
     let displayName = originalNumber;
-    let isVerified = '';
     try {
-        if (typeof sock.getName === 'function') {
-            const name = await sock.getName(originalNumber + '@s.whatsapp.net');
-            if (name) displayName = name;
+        if (sock?.profilePictureUrl || sock?.getName) {
+            const name = await sock.getName?.(originalJid) || originalNumber;
+            if (name && name !== originalNumber) displayName = name;
         }
-    } catch (e) {}
+    } catch {}
 
-    // Mark forwarded when original differs from immediate sender
-    const isForwarded = originalNumber !== senderNumber;
+    let forwardedByName = null;
+    if (forwardedByJid && forwardedByJid !== originalJid) {
+        try {
+            forwardedByName = await sock.getName?.(forwardedByJid) || forwardedByJid.split('@')[0];
+        } catch {}
+    }
 
     return {
-        displayName,
         number: originalNumber,
+        name: displayName,
+        directNumber,
         isForwarded,
-        directSenderNumber: senderNumber,
-        isVerified
+        forwardedBy: forwardedByName || (forwardedByJid ? forwardedByJid.split('@')[0] : null),
+        jid: originalJid
     };
 }
 
-// Forward status to owner with clear info
-async function forwardStatusToOwner(sock, message) {
-    try {
-        if (!config.forwardToOwner) return;
+// Forward with rich sender info in caption
+async function forwardStatusToOwner(sock, m) {
+    if (!config.forwardToOwner) return;
+    if (config.forwardOnlyMedia && !m.message?.imageMessage && !m.message?.videoMessage) return;
 
-        const ownerJid = getOwnerJid(sock);
-        if (!ownerJid) return;
+    const ownerJid = getOwnerJid(sock);
+    if (!ownerJid) return;
 
-        const msgType = message.message;
-        if (!msgType?.imageMessage && !msgType?.videoMessage) return;
+    const sender = await getBestSenderInfo(sock, m);
 
-        const senderInfo = await getOriginalSenderInfo(sock, message);
+    const timeStr = new Date().toLocaleString('en-GB', {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+    });
 
-        const now = new Date();
-        const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const date = now.toLocaleDateString();
+    let fromText = `👤 **\( {sender.name}** ( \){sender.number})`;
 
-        let fromLine;
-        if (senderInfo.isForwarded) {
-            fromLine = `${senderInfo.displayName} (${senderInfo.number})\n↪ Forwarded from: ${senderInfo.directSenderNumber}`;
-        } else {
-            fromLine = `${senderInfo.displayName} (${senderInfo.number})`;
-        }
-
-        const caption = `🟢 New Private Status\n👤 From: ${fromLine}${senderInfo.isVerified || ''}\n🕓 Time: ${date} ${time}`;
-
-        // Send a small summary text, then forward the media for clarity
-        try {
-            await sock.sendMessage(ownerJid, { text: caption });
-            await sock.sendMessage(ownerJid, { forward: message });
-        } catch (e) {
-            // If forward fails, fallback to forwarding raw message
-            try { await sock.sendMessage(ownerJid, { forward: message }); } catch (e2) { console.error('Forward fallback failed:', e2 && e2.message ? e2.message : e2); }
-        }
-
-        console.log(`Forwarded status from ${senderInfo.number} (display: ${senderInfo.displayName}) ${senderInfo.isForwarded ? '[forwarded]' : ''}`);
-    } catch (error) {
-        console.error('Forward error:', error.message);
+    if (sender.isForwarded && sender.forwardedBy) {
+        fromText += `\n↳ Forwarded by: ${sender.forwardedBy}`;
+    } else if (sender.isForwarded) {
+        fromText += `\n↳ Forwarded status`;
     }
+
+    const caption = `🟢 New Status Update\n${fromText}\n🕒 ${timeStr}\n\n──────────────`;
+
+    try {
+        // 1. Send informative caption first
+        await sock.sendMessage(ownerJid, { text: caption });
+
+        // 2. Then forward the original media (preserves quality/best compatibility)
+        await sock.sendMessage(ownerJid, { forward: m.key });
+    } catch (e) {
+        console.log('[AutoStatus] Forward failed → trying copyNForward fallback');
+        try {
+            await sock.copyNForward(ownerJid, m, true, { caption });
+        } catch (e2) {
+            console.error('[AutoStatus] Both forwarding methods failed:', e2.message);
+        }
+    }
+
+    console.log(`[AutoStatus] Forwarded → \( {sender.name} ( \){sender.number})${sender.isForwarded ? ' [forwarded]' : ''}`);
 }
 
-// Updated Menu with green heart and correct info
-const getStatusMenu = (targetNum, cfg) => `
-╭━━━━━━━━✦ Auto Status ✦━━━━━━━━╮
-┃                               ┃
-┃  📱 Module  : ${cfg.enabled ? '✅ ENABLED' : '❌ DISABLED'}        ┃
-┃  💚 React   : ${cfg.reactOn ? '✅ ENABLED' : '❌ DISABLED'}        ┃
-┃  ➡️ Forward : ${cfg.forwardToOwner ? '✅ ENABLED' : '❌ DISABLED'}  ┃
-┃  👤 Target  : ${targetNum}     ┃
-┃                               ┃
-┃  ✧ Commands ✧                 ┃
-┃  • enable         → Enable module   ┃
-┃  • disable        → Disable module  ┃
-┃  • forward on/off → Enable/Disable forward   ┃
-┃  • react on/off   → Enable/Disable reaction  ┃
-┃  • (no arg)       → Show this menu   ┃
-┃                               ┃
-╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
+// ────────────────────────────────────────────────
 
-✨ Mickey Glitch is watching all private statuses for you ✨
+const getStatusMenu = (ownerNum) => `
+╭── ✦ Auto Status Control ✦ ──╮
+│                               │
+│  Module    : ${config.enabled ? '🟢 ON' : '🔴 OFF'} 
+│  Reaction  : ${config.reactWith ? `🟢 ${config.reactWith}` : '🔴 OFF'}
+│  Forward   : ${config.forwardToOwner ? '🟢 ON' : '🔴 OFF'} 
+│  Owner     : ${ownerNum || '—'}
+│                               │
+│  Commands:                    │
+│  • on / off                   │
+│  • react 💚 / react off       │
+│  • forward on / forward off   │
+│  • status                     │
+│                               │
+╰───────────────────────────────╯
 `.trim();
 
-// Command handler
-async function autoStatusCommand(sock, chatId, msg, args) {
-    try {
-        const senderId = msg.key.participant || msg.key.remoteJid;
-        const isOwner = await isOwnerOrSudo(senderId, sock, chatId);
+async function autoStatusCommand(sock, m, args = '') {
+    const chatId = m.key.remoteJid;
+    const sender = m.key.participant || m.key.remoteJid;
 
-        if (!msg.key.fromMe && !isOwner) {
-            await sock.sendMessage(chatId, { text: '❌ Owner-only command!' }, { quoted: msg });
-            return;
-        }
-
-        const command = args && typeof args === 'string' ? args.trim().toLowerCase() : '';
-
-        // Enable/disable entire module
-        if (['enable', 'disable'].includes(command)) {
-            const newState = command === 'enable';
-            config.enabled = newState;
-            if (saveConfig()) {
-                await sock.sendMessage(chatId, { text: `✦ Auto Status module is now ${newState ? 'ENABLED ✅' : 'DISABLED ❌'}` }, { quoted: msg });
-            } else {
-                await sock.sendMessage(chatId, { text: '❌ Failed to save settings!' }, { quoted: msg });
-            }
-            return;
-        }
-
-        // forward on/off
-        if (command.startsWith('forward')) {
-            const parts = command.split(/\s+/);
-            const action = parts[1];
-            if (action === 'on' || action === 'off') {
-                const newState = action === 'on';
-                config.forwardToOwner = newState;
-                if (saveConfig()) {
-                    await sock.sendMessage(chatId, { text: `✦ Forwarding is now ${newState ? 'ENABLED ✅' : 'DISABLED ❌'}` }, { quoted: msg });
-                } else {
-                    await sock.sendMessage(chatId, { text: '❌ Failed to save settings!' }, { quoted: msg });
-                }
-            } else {
-                await sock.sendMessage(chatId, { text: 'Usage: forward on | forward off' }, { quoted: msg });
-            }
-            return;
-        }
-
-        // react on/off
-        if (command.startsWith('react')) {
-            const parts = command.split(/\s+/);
-            const action = parts[1];
-            if (action === 'on' || action === 'off') {
-                const newState = action === 'on';
-                config.reactOn = newState;
-                if (saveConfig()) {
-                    await sock.sendMessage(chatId, { text: `✦ Reaction is now ${newState ? 'ENABLED ✅' : 'DISABLED ❌'}` }, { quoted: msg });
-                } else {
-                    await sock.sendMessage(chatId, { text: '❌ Failed to save settings!' }, { quoted: msg });
-                }
-            } else {
-                await sock.sendMessage(chatId, { text: 'Usage: react on | react off' }, { quoted: msg });
-            }
-            return;
-        }
-
-        // Show menu
-        const ownerJid = getOwnerJid(sock);
-        const ownerNum = ownerJid ? ownerJid.split('@')[0] : 'Unknown';
-
-        await sock.sendMessage(chatId, {
-            text: getStatusMenu(ownerNum, config)
-        }, { quoted: msg });
-
-    } catch (error) {
-        console.error('Command error:', error);
-        await sock.sendMessage(chatId, { text: '⚠️ Error occurred!' }, { quoted: msg });
+    if (!(await isOwnerOrSudo(sender, sock, chatId))) {
+        await sock.sendMessage(chatId, { text: '⛔ Owner only!' }, { quoted: m });
+        return;
     }
+
+    const cmd = args.trim().toLowerCase();
+
+    if (cmd === 'on' || cmd === 'off') {
+        config.enabled = cmd === 'on';
+        saveConfig();
+        await sock.sendMessage(chatId, { text: `Module → ${config.enabled ? '🟢 ON' : '🔴 OFF'}` }, { quoted: m });
+        return;
+    }
+
+    if (cmd.startsWith('react')) {
+        const reactArg = cmd.replace('react', '').trim();
+        if (reactArg === 'off') config.reactWith = null;
+        else if (reactArg) config.reactWith = reactArg.slice(0, 4); // allow longer emojis if needed
+        else config.reactWith = '💚';
+
+        saveConfig();
+        const status = config.reactWith ? `🟢 ${config.reactWith}` : '🔴 OFF';
+        await sock.sendMessage(chatId, { text: `Reaction → ${status}` }, { quoted: m });
+        return;
+    }
+
+    if (cmd.includes('forward')) {
+        config.forwardToOwner = !cmd.includes('off');
+        saveConfig();
+        await sock.sendMessage(chatId, {
+            text: `Forward to owner → ${config.forwardToOwner ? '🟢 ON' : '🔴 OFF'}`
+        }, { quoted: m });
+        return;
+    }
+
+    const ownerNum = getOwnerJid(sock)?.split('@')[0] || '—';
+    await sock.sendMessage(chatId, { text: getStatusMenu(ownerNum) }, { quoted: m });
 }
 
-// Always react with green heart (if enabled)
-async function reactToStatus(sock, statusKey) {
+// ────────────────────────────────────────────────
+
+async function reactToStatus(sock, key) {
+    if (!config.enabled || !config.reactWith) return;
+
     try {
-        if (!config.reactOn) return;
         await sock.relayMessage('status@broadcast', {
             reactionMessage: {
-                key: statusKey,
-                text: '💚'  // Green heart
+                key,
+                text: config.reactWith,
+                senderTimestampMs: Date.now()
             }
-        }, { messageId: statusKey.id });
+        }, { messageId: key.id });
     } catch (e) {
-        console.error('Reaction failed:', e.message);
+        console.log('[AutoStatus] Reaction failed:', e.message);
     }
 }
 
-// Main handler
 async function handleStatusUpdate(sock, status) {
     try {
-        let message = null;
-        let key = null;
+        if (!status?.messages?.length && !status?.key) return;
 
-        if (status.messages?.length > 0) {
-            message = status.messages[0];
-            key = message.key;
-        } else if (status.key) {
-            message = status;
-            key = status.key;
-        }
+        const m = status.messages?.[0] || status;
+        const key = m.key;
 
-        if (!key || key.remoteJid !== 'status@broadcast') return;
+        if (key.remoteJid !== 'status@broadcast') return;
 
-        // Always mark as read
         await sock.readMessages([key]).catch(() => {});
 
-        // Always react with green heart (if module enabled)
-        if (config.enabled) await reactToStatus(sock, key);
+        await reactToStatus(sock, key);
 
-        // Forward if enabled, module enabled, and it's media
-        if (config.enabled && config.forwardToOwner && (message?.message?.imageMessage || message?.message?.videoMessage)) {
-            await forwardStatusToOwner(sock, message);
+        if (config.enabled && config.forwardToOwner) {
+            await forwardStatusToOwner(sock, m);
         }
-    } catch (error) {
-        console.error('Handler error:', error.message);
+    } catch (err) {
+        console.error('[AutoStatus] Handler error:', err.message);
     }
 }
 
