@@ -34,18 +34,46 @@ function readMessageText(message) {
     message.message?.conversation ||
     message.message?.extendedTextMessage?.text ||
     message.message?.imageMessage?.caption ||
+    message.message?.videoMessage?.caption ||
     ''
   ).trim();
 }
 
+function getCommandDescription(filePath) {
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const lines = raw.split(/\r?\n/).slice(0, 8);
+    for (const ln of lines) {
+      const t = ln.trim();
+      if (!t) continue;
+      if (t.startsWith('//')) return t.replace(/^\/\/\s?/, '').trim();
+      if (t.startsWith('/*')) return t.replace(/^\/\*\s?/, '').replace(/\*\/$/, '').trim();
+      if (t.startsWith('*')) return t.replace(/^\*\s?/, '').trim();
+    }
+  } catch (e) {
+    // ignore and return empty description
+  }
+  return '';
+}
+
 function listCommandFiles() {
   const commandsDir = __dirname; // this file is in commands/
-  const files = fs.readdirSync(commandsDir);
+  let files = [];
+  try {
+    files = fs.readdirSync(commandsDir);
+  } catch (e) {
+    return [];
+  }
   const cmds = files
     .filter(f => f.endsWith('.js'))
     .map(f => path.basename(f, '.js'))
     .filter(name => !EXCLUDE.includes(name))
-    .sort((a, b) => a.localeCompare(b));
+    .sort((a, b) => a.localeCompare(b))
+    .map(name => {
+      const fp = path.join(commandsDir, `${name}.js`);
+      const desc = getCommandDescription(fp);
+      return { name, desc };
+    });
   return cmds;
 }
 
@@ -62,23 +90,21 @@ function buildHelpMessage(cmdList, opts = {}) {
     name
   } = opts;
 
-  // Improved header formatting with extra runtime/system info and greeting
   const header = `┏━━〔 ${settings.botName || '𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑'} 〕━━┓\n` +
-    `┃ 🧑‍🔧 Owner: ${settings.botOwner || 'Mickey'}\n` +
-    `┃ ✨ Hello: ${name || user || 'Unknown'}\n` +
-    `┃ 🔖 Version: v${settings.version || '?.?'}  |  ⏱ Uptime: ${runtime || getUptime()}\n` +
-    `┃\n` +
-    `┃ ▸ Runtime: ${runtime || getUptime()}\n` +
-    `┃ ▸ Mode: ${mode || settings.commandMode || 'public'}\n` +
-    `┃ ▸ Prefix: ${prefix || settings.prefix || '.'}\n` +
-    `┃ ▸ RAM: ${ramUsed || '?'} / ${ramTotal || '?'} GB\n` +
-    `┃ ▸ Time: ${time || new Date().toLocaleTimeString('en-GB', { hour12: false })}\n` +
-    `┃ ▸ User: ${name || user || 'Unknown'}\n` +
+    `┃ 👑 Owner : ${settings.botOwner || 'Mickey'}\n` +
+    `┃ ✨ User  : ${name || user || 'Unknown'}  |  🔖 v${settings.version || '?.?'}\n` +
+    `┃ ⏱ Uptime : ${runtime || getUptime()}  |  ⌚ ${time || new Date().toLocaleTimeString('en-GB', { hour12: false })}\n` +
+    `┃ 🛡 Mode  : ${mode || settings.commandMode || 'public'}  |  Prefix: ${prefix || settings.prefix || '.'}\n` +
+    `┃ 🧠 RAM   : ${ramUsed || '?'} / ${ramTotal || '?'} GB\n` +
     `┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
 
-  const title = `*Commands*\n\n`;
+  const title = `*• Commands (${total})*\n\n`;
 
-  const list = cmdList.map(c => `• ${c}`).join('\n');
+  const list = cmdList.map(c => {
+    const nameStr = `${prefix}${c.name}`;
+    const descStr = c.desc ? ` — ${c.desc}` : '';
+    return `• ${nameStr}${descStr}`;
+  }).join('\n');
 
   const footer = `\n\n*Total commands:* ${total}  —  *Excluded:* ${EXCLUDE.length}`;
 
@@ -139,7 +165,27 @@ async function helpCommand(sock, chatId, message) {
       name: displayName
     });
 
-    // Fixed externalAdReply – now shows properly with large thumbnail
+    // If message is large, send as a text file instead to avoid truncation issues
+    if (helpText.length > 4000) {
+      try {
+        const tmpPath = path.join(os.tmpdir(), `help-${Date.now()}.txt`);
+        fs.writeFileSync(tmpPath, helpText, 'utf8');
+        const fileBuf = fs.readFileSync(tmpPath);
+        await sock.sendMessage(chatId, {
+          document: fileBuf,
+          fileName: `help_${settings.botName?.replace(/\s+/g, '_') || 'bot'}_${new Date().toISOString().slice(0,10)}.txt`,
+          mimetype: 'text/plain',
+          caption: `📚 Help — full command list (v${settings.version || '?.?'})`
+        }, { quoted: message });
+        try { fs.unlinkSync(tmpPath); } catch (_) {}
+      } catch (e) {
+        console.error('Failed to send help as file:', e);
+        await sock.sendMessage(chatId, { text: helpText }, { quoted: message });
+      }
+      return;
+    }
+
+    // Normal text message with externalAdReply card
     await sock.sendMessage(chatId, {
       text: helpText,
       contextInfo: {
@@ -150,16 +196,17 @@ async function helpCommand(sock, chatId, message) {
           thumbnailUrl: BANNER,
           sourceUrl: 'https://github.com/Mickeydeveloper/Mickey-Glitch',
           mediaType: 1,
-          mediaUrl: 'https://github.com/Mickeydeveloper/Mickey-Glitch', // Helps force preview in some Baileys forks
-          showAdAttribution: true,          // REQUIRED: Must be true to display the ad card
-          renderLargerThumbnail: true       // Large thumbnail
+          mediaUrl: 'https://github.com/Mickeydeveloper/Mickey-Glitch',
+          showAdAttribution: true,
+          renderLargerThumbnail: true
         }
       }
     }, { quoted: message });
 
   } catch (error) {
     console.error('helpCommand Error:', error);
-    await sock.sendMessage(chatId, { text: `*Error:* \( {error.message}\n\n \){FALLBACK}` }, { quoted: message });
+    const msg = `*Error:* ${error?.message || error}\n\n${FALLBACK}`;
+    await sock.sendMessage(chatId, { text: msg }, { quoted: message });
   }
 }
 

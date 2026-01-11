@@ -19,7 +19,7 @@ function saveState(state) {
     if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
     fs.writeFileSync(path.join(dataDir, 'antistatusmention.json'), JSON.stringify(state, null, 2));
   } catch (e) {
-    // ignore write errors
+    console.error('Failed to save antistatusmention state:', e?.message || e);
   }
 }
 
@@ -31,80 +31,88 @@ function isEnabledForChat(state, chatId) {
 
 async function handleAntiStatusMention(sock, chatId, message) {
   try {
+    // Only operate in groups on incoming messages
     if (!chatId || !chatId.endsWith('@g.us')) return;
     if (!message?.message) return;
+    if (message.key?.fromMe) return; // ignore our own messages
 
     const state = loadState();
     if (!isEnabledForChat(state, chatId)) return;
 
+    // Normalize bot JID and prepare mention heuristics
+    const rawBotId = sock.user?.id || sock.user?.jid || '';
+    const botNum = rawBotId.split('@')[0].split(':')[0];
+
+    // Extract text content from many possible message shapes
     const msg = message.message || {};
     const text = (
       msg.conversation ||
       msg.extendedTextMessage?.text ||
       msg.imageMessage?.caption ||
       msg.videoMessage?.caption ||
+      msg.listResponseMessage?.singleSelectReply?.selectedRowId ||
       ''
     ).toString();
     if (!text) return;
 
     // If the message explicitly mentions users, ignore (we only target status-mention spam)
-    const mentionedJids = msg.extendedTextMessage?.contextInfo?.mentionedJid || msg.contextInfo?.mentionedJid || [];
-    if (Array.isArray(mentionedJids) && mentionedJids.length > 0) return;
+    const mentionedJids = [];
+    const ctxs = [
+      msg.extendedTextMessage?.contextInfo,
+      msg.imageMessage?.contextInfo,
+      msg.videoMessage?.contextInfo,
+      msg.listResponseMessage?.contextInfo,
+      msg.buttonsResponseMessage?.contextInfo
+    ].filter(Boolean);
+    for (const c of ctxs) {
+      if (Array.isArray(c?.mentionedJid)) mentionedJids.push(...c.mentionedJid);
+    }
+    if (Array.isArray(msg?.mentionedJid)) mentionedJids.push(...msg.mentionedJid);
 
-    const phraseRegex = /\b(?:this\s+group\s+was\s+mention(?:ed)?|group\s+was\s+mention(?:ed)?|mentioned\s+this\s+group|mention(?:ed)?\s+this\s+group|status\s+mention(?:ed)?|mention\s+status)\b/i;
+    if (mentionedJids.length > 0) return; // actual mentions are not status mention spam
 
-    if (!phraseRegex.test(text)) return;
+    // Heuristic: many status-mention spam messages use phrases like "mentioned this group" or "status mention"
+    const phraseRegex = /\b(mention(?:ed)?\s+(?:this\s+)?group|mentioned\s+(?:this\s+)?group|status\s+mention(?:ed)?|mentioned\s+in\s+status|mention\s+status)\b/i;
+    if (!phraseRegex.test(text)) {
+      // Fallback heuristic: message contains bot number like @123456 - often used in status mention captions
+      const stripped = text.replace(/\s+/g, '');
+      if (!new RegExp(`@?${botNum}\b`).test(stripped)) return;
+    }
+
+    // Don't delete messages from group admins (safer) or from the bot itself
+    const sender = message.key.participant || message.key.remoteJid;
+    const senderAdminInfo = await isAdmin(sock, chatId, sender).catch(() => ({ isSenderAdmin: false }));
+    if (senderAdminInfo.isSenderAdmin) return;
 
     // Ensure bot is admin so we can delete
-    let adminInfo = { isBotAdmin: false };
-    try {
-      const botId = sock.user?.id || sock.user?.jid || '';
-      adminInfo = await isAdmin(sock, chatId, botId);
-    } catch (e) {
-      // fallthrough
-    }
-    if (!adminInfo.isBotAdmin) return;
+    const botAdminInfo = await isAdmin(sock, chatId, rawBotId).catch(() => ({ isBotAdmin: false }));
+    if (!botAdminInfo.isBotAdmin) return;
 
     // Attempt to delete the offending message (best-effort)
     try {
       const messageId = message.key.id;
       const participant = message.key.participant || message.key.remoteJid;
-      
+
       console.log('AntiStatusMention: matched phrase, attempting delete', { chatId, msgId: messageId, participant });
-      
-      // Construct proper delete key
-      const deleteKey = {
-        remoteJid: chatId,
-        fromMe: false,
-        id: messageId,
-        participant: participant
-      };
-      
-      // Try multiple delete methods for better compatibility
+
+      // Try to delete using the existing key (preferred)
       let deleted = false;
-      
       try {
-        // Preferred: use the original message key (works with Baileys)
         if (message.key) {
           await sock.sendMessage(chatId, { delete: message.key });
           deleted = true;
           console.log('Message deleted successfully using message.key method');
         }
       } catch (err1) {
+        // Structured fallback
         try {
-          // Fallback: structured delete key with participant
+          const deleteKey = { remoteJid: chatId, fromMe: false, id: messageId, participant };
           await sock.sendMessage(chatId, { delete: deleteKey });
           deleted = true;
-          console.log('Message deleted successfully using deleteKey fallback');
+          console.log('Message deleted successfully using structured deleteKey');
         } catch (err2) {
           try {
-            // Fallback: ID-only delete
-            await sock.sendMessage(chatId, { 
-              delete: { 
-                remoteJid: chatId, 
-                id: messageId 
-              } 
-            });
+            await sock.sendMessage(chatId, { delete: { remoteJid: chatId, id: messageId } });
             deleted = true;
             console.log('Message deleted successfully using ID-only fallback');
           } catch (err3) {
@@ -112,18 +120,19 @@ async function handleAntiStatusMention(sock, chatId, message) {
           }
         }
       }
-      
-      // Send info about the status mention deletion
-      const sender = message.key.participant || message.key.remoteJid;
-      const senderName = sender ? `@${sender.split('@')[0]}` : 'User';
-      
-      try { 
-        const status = deleted ? '✅ Message deleted' : '⚠️ Attempted to delete';
-        await sock.sendMessage(chatId, { 
-          text: `ℹ️ Status mention detected!\n\n📌 Details:\n• Sender: ${senderName}\n• Action: ${status}\n🛡️ Anti-Status-Mention protection` 
-        }); 
+
+      // Optionally notify group (avoid tagging the sender)
+      try {
+        const senderName = sender ? `@${sender.split('@')[0]}` : 'User';
+        const status = deleted ? '✅ Message deleted' : '⚠️ Attempted to delete but failed';
+        await sock.sendMessage(chatId, { text: `ℹ️ *Anti-Status-Mention*
+
+• Sender: ${senderName}
+• Action: ${status}
+
+If the message persists, ensure the bot has admin rights and the message is still removable.` });
       } catch (e) {
-        console.error('Failed to send info message:', e?.message);
+        console.error('Failed to send info message:', e?.message || e);
       }
     } catch (e) {
       console.error('Failed to handle status mention message:', e?.message || e);
