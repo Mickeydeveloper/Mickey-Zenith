@@ -10,8 +10,6 @@ const AXIOS_CONFIG = {
     }
 };
 
-const API_BASE = "https://api.vreden.my.id/api/v1/download/play/audio";
-
 async function safeRequest(fn, maxAttempts = 3) {
     let lastErr;
     for (let i = 1; i <= maxAttempts; i++) {
@@ -19,91 +17,76 @@ async function safeRequest(fn, maxAttempts = 3) {
             return await fn();
         } catch (err) {
             lastErr = err;
-            if (i < maxAttempts) {
-                await new Promise(r => setTimeout(r, 800 * i));
-            }
+            if (i < maxAttempts) await new Promise(r => setTimeout(r, 700 * i));
         }
     }
-    throw lastErr;
+    throw lastErr || new Error("Request failed after retries");
 }
 
-async function fetchAudioData(queryOrUrl) {
-    const param = encodeURIComponent(queryOrUrl);
-    const urlsToTry = [
-        `\( {API_BASE}?query= \){param}&format=mp3`,
-        `\( {API_BASE}?query= \){param}`
+async function fetchAudioData(videoUrl, titleForFallback) {
+    const sources = [
+        // Primary: convert2mp3s.com (simple & working in recent checks)
+        `https://convert2mp3s.com/api/single/mp3?url=${encodeURIComponent(videoUrl)}`,
+
+        // Fallback mirror style (some public proxies use similar endpoints)
+        `https://convert2mp3s.com/api/button/mp3?url=${encodeURIComponent(videoUrl)}`
     ];
 
-    for (const url of urlsToTry) {
+    for (const apiUrl of sources) {
         try {
-            const res = await safeRequest(() => axios.get(url, AXIOS_CONFIG));
+            const res = await safeRequest(() => axios.get(apiUrl, AXIOS_CONFIG));
+            const data = res.data;
 
-            const data = res?.data;
+            // Many of these APIs return { url: "...", title: "...", ... } or similar
+            let downloadUrl = data.url || data.download || data.link || null;
+            let songTitle   = data.title || titleForFallback || "Audio";
+            let thumb       = data.thumbnail || data.thumb || null;
 
-            // Different APIs return different structures — normalize them
-            if (data?.result?.download) {
+            if (downloadUrl && downloadUrl.startsWith('http')) {
                 return {
-                    url: data.result.download,
-                    title: data.result.title || "Audio",
-                    thumbnail: data.result.thumbnail || data.result.thumb
+                    url: downloadUrl,
+                    title: songTitle,
+                    thumbnail: thumb
                 };
             }
-
-            if (data?.dl) {
-                return {
-                    url: data.dl,
-                    title: data.title || "Audio",
-                    thumbnail: data.thumb
-                };
-            }
-
-            if (data?.url || data?.download_url) {
-                return {
-                    url: data.url || data.download_url,
-                    title: data.title || "Audio",
-                    thumbnail: data.thumb || data.thumbnail
-                };
-            }
-        } catch (_) {
-            // silent fail → try next URL
+        } catch (e) {
+            // silent → try next source
+            console.log(`[AUDIO] Source failed: ${apiUrl} → ${e.message}`);
         }
     }
 
-    throw new Error("No valid download link found from API");
+    throw new Error("No working audio download link found from available sources");
 }
 
 async function playCommand(sock, chatId, message) {
     try {
         const text = message.message?.conversation ||
-                     message.message?.extendedTextMessage?.text ||
-                     "";
+                     message.message?.extendedTextMessage?.text || "";
         const query = text.split(' ').slice(1).join(' ').trim();
 
         if (!query) {
             await sock.sendMessage(chatId, {
-                text: "⚠️  *Usage:*  `.play <song name / YouTube link>`"
+                text: "⚠️ Usage: `.play <song name or YouTube link>`"
             }, { quoted: message });
             return;
         }
 
-        // ── Quick reaction ────────────────────────────────────────
         await sock.sendMessage(chatId, {
             react: { text: "🔍", key: message.key }
         });
 
-        // ── Resolve video ─────────────────────────────────────────
         let videoInfo = {
             url: null,
             title: "Unknown Title",
-            thumbnail: "https://i.ytimg.com/vi_webp/default.webp",
+            thumbnail: "https://i.ytimg.com/vi/default.jpg",
             timestamp: "??:??"
         };
 
-        const isUrl = query.includes("youtube.com") || query.includes("youtu.be");
+        const isUrl = /youtube\.com|youtu\.be/.test(query);
 
         if (isUrl) {
-            videoInfo.url = query;
-            videoInfo.title = "YouTube Audio";
+            videoInfo.url = query.startsWith('http') ? query : `https://${query}`;
+            videoInfo.title = "YouTube Track";
         } else {
             await sock.sendMessage(chatId, {
                 react: { text: "🔎", key: message.key }
@@ -112,11 +95,9 @@ async function playCommand(sock, chatId, message) {
             const search = await yts(query);
             if (!search?.videos?.length) {
                 await sock.sendMessage(chatId, {
-                    text: "😕 No results found for: *" + query + "*"
+                    text: `❌ No results found for "${query}"`
                 }, { quoted: message });
-                await sock.sendMessage(chatId, {
-                    react: { text: "❌", key: message.key }
-                });
+                await sock.sendMessage(chatId, { react: { text: "❌", key: message.key } });
                 return;
             }
 
@@ -129,68 +110,60 @@ async function playCommand(sock, chatId, message) {
             };
         }
 
-        // ── Downloading phase ─────────────────────────────────────
         await sock.sendMessage(chatId, {
             react: { text: "⬇️", key: message.key }
         });
 
-        // ── Get thumbnail buffer (with fallback) ──────────────────
         let thumbBuffer;
         try {
             thumbBuffer = await getBuffer(videoInfo.thumbnail);
         } catch {
-            thumbBuffer = await getBuffer("https://i.ytimg.com/vi_webp/default.webp");
+            thumbBuffer = await getBuffer("https://i.ytimg.com/vi/default.jpg");
         }
 
-        // ── Beautiful preview card ────────────────────────────────
+        // Clean preview – no ads
         await sock.sendMessage(chatId, {
-            text: "🎧 *Preparing audio...*",
+            text: "🎶 Preparing your audio...",
             contextInfo: {
                 externalAdReply: {
                     title: videoInfo.title,
-                    body: `Duration • ${videoInfo.timestamp}  •  128kbps mp3  •  Mickey Glitch™`,
+                    body: `Duration: ${videoInfo.timestamp} • MP3`,
                     thumbnail: thumbBuffer,
                     mediaType: 1,
                     renderLargerThumbnail: true,
-                    sourceUrl: videoInfo.url || "https://youtube.com"
+                    sourceUrl: videoInfo.url
                 }
             }
         }, { quoted: message });
 
-        // ── Fetch download link ───────────────────────────────────
-        const audio = await fetchAudioData(isUrl ? videoInfo.url : videoInfo.title);
+        // Fetch the direct mp3 link
+        const audio = await fetchAudioData(videoInfo.url, videoInfo.title);
 
-        if (!audio?.url) {
-            throw new Error("API did not return a valid download link");
-        }
-
-        // ── Sending audio ─────────────────────────────────────────
         await sock.sendMessage(chatId, {
             react: { text: "🎵", key: message.key }
         });
 
-        const safeTitle = (audio.title || videoInfo.title || "audio")
+        const safeTitle = (audio.title || videoInfo.title || "track")
             .replace(/[^\w\s-]/g, '')
-            .trim() || "audio";
+            .trim() || "track";
 
         await sock.sendMessage(chatId, {
             audio: { url: audio.url },
             mimetype: 'audio/mpeg',
             fileName: `${safeTitle}.mp3`,
             ptt: false,
-            waveform: [5,25,50,80,100,85,65,40,20,5,0]  // nicer wave
+            waveform: [0, 15, 35, 60, 90, 100, 85, 60, 35, 15, 0]
         }, { quoted: message });
 
-        // ── Success ───────────────────────────────────────────────
         await sock.sendMessage(chatId, {
             react: { text: "✅", key: message.key }
         });
 
     } catch (err) {
-        console.error("[PLAY]", err?.message || err);
+        console.error("[PLAY ERROR]", err?.message || err);
 
         await sock.sendMessage(chatId, {
-            text: "❌ Sorry, failed to get the audio.\nTry again or use a different link/query.",
+            text: "❌ Could not fetch the audio.\nThe link might be invalid, or try a different song/query later.",
         }, { quoted: message });
 
         await sock.sendMessage(chatId, {
