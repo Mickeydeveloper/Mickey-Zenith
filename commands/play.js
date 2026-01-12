@@ -10,11 +10,7 @@ const AXIOS_CONFIG = {
     }
 };
 
-function extractVideoId(url) {
-    const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
-    const match = url.match(regex);
-    return match ? match[1] : null;
-}
+const API_URL = "https://api.vreden.my.id/api/v1/download/play/audio";
 
 async function safeRequest(fn, maxAttempts = 3) {
     let lastErr;
@@ -23,59 +19,41 @@ async function safeRequest(fn, maxAttempts = 3) {
             return await fn();
         } catch (err) {
             lastErr = err;
-            if (i < maxAttempts) await new Promise(r => setTimeout(r, 800 * i));
+            if (i < maxAttempts) await new Promise(r => setTimeout(r, 1000 * i));
         }
     }
-    throw lastErr || new Error("All request attempts failed");
+    throw lastErr || new Error("API request failed after retries");
 }
 
-async function fetchAudioData(videoUrl, fallbackTitle) {
-    const videoId = extractVideoId(videoUrl);
-    if (!videoId && !videoUrl.includes('youtube.com') && !videoUrl.includes('youtu.be')) {
-        // If not URL, treat as search query fallback
-        throw new Error("Invalid YouTube URL for direct download");
+async function fetchAudioFromVreden(query) {
+    const fullUrl = `\( {API_URL}?query= \){encodeURIComponent(query)}`;
+
+    const res = await safeRequest(() => axios.get(fullUrl, AXIOS_CONFIG));
+
+    const data = res.data || {};
+
+    // Try common fields from this API (based on typical responses)
+    let downloadUrl = null;
+    if (data.result && data.result.download) {
+        downloadUrl = data.result.download;
+    } else if (data.dl) {
+        downloadUrl = data.dl;
+    } else if (data.download || data.url || data.link) {
+        downloadUrl = data.download || data.url || data.link;
     }
 
-    const sources = [
-        // Primary: MatheusIshiyama repl.co API (active in recent GitHub mentions)
-        `https://youtube-download-api.matheusishiyama.repl.co/download?format=mp3&url=${encodeURIComponent(videoUrl)}`,
+    const title = data.result?.title || data.title || "Audio Track";
+    const thumbnail = data.result?.thumbnail || data.thumb || data.thumbnail || null;
 
-        // Fallback: Vevioz-style direct (some instances expose JSON)
-        `https://api.vevioz.com/@api/button/mp3/${videoId}`,
-
-        // Another mirror style from GitHub topics (adjust if needed)
-        `https://youtube-download-api.matheusishiyama.repl.co/mp3?id=${videoId}`
-    ];
-
-    for (const apiUrl of sources) {
-        try {
-            const res = await safeRequest(() => axios.get(apiUrl, AXIOS_CONFIG));
-            const data = res.data;
-
-            // Normalize different response formats
-            let downloadUrl = data.url || data.download || data.link || data.mp3 || data.audio || null;
-            let songTitle   = data.title || data.videoTitle || fallbackTitle || "Audio Track";
-            let thumb       = data.thumbnail || data.thumb || data.image || null;
-
-            // Some return direct redirect or stream URL
-            if (typeof data === 'string' && data.startsWith('http') && data.includes('.mp3')) {
-                downloadUrl = data;
-            }
-
-            if (downloadUrl && (downloadUrl.startsWith('http') || downloadUrl.includes('.mp3'))) {
-                return {
-                    url: downloadUrl,
-                    title: songTitle,
-                    thumbnail: thumb
-                };
-            }
-        } catch (e) {
-            console.log(`[AUDIO SOURCE FAIL] ${apiUrl} → ${e.message || e}`);
-            // continue to next
-        }
+    if (!downloadUrl || !downloadUrl.startsWith('http')) {
+        throw new Error(`No valid download link in API response. Got: ${JSON.stringify(data)}`);
     }
 
-    throw new Error("No valid MP3 download link from available sources (APIs may be temporary)");
+    return {
+        url: downloadUrl,
+        title,
+        thumbnail
+    };
 }
 
 async function playCommand(sock, chatId, message) {
@@ -102,9 +80,9 @@ async function playCommand(sock, chatId, message) {
             timestamp: "??:??"
         };
 
-        const isUrl = /youtube\.com|youtu\.be/.test(query);
+        const isYouTubeLink = /youtube\.com|youtu\.be/.test(query);
 
-        if (isUrl) {
+        if (isYouTubeLink) {
             videoInfo.url = query.startsWith('http') ? query : `https://${query}`;
             videoInfo.title = "YouTube Audio";
         } else {
@@ -150,23 +128,31 @@ async function playCommand(sock, chatId, message) {
                     thumbnail: thumbBuffer,
                     mediaType: 1,
                     renderLargerThumbnail: true,
-                    sourceUrl: videoInfo.url
+                    sourceUrl: videoInfo.url || "https://youtube.com"
                 }
             }
         }, { quoted: message });
 
-        const audio = await fetchAudioData(videoInfo.url, videoInfo.title);
+        // Use only vreden API - try link first, then title as fallback
+        let audioData;
+        try {
+            audioData = await fetchAudioFromVreden(videoInfo.url || query);
+        } catch (e) {
+            // Fallback to song title / search query if link fails
+            console.log("[VREDEN] Link attempt failed, trying query:", e.message);
+            audioData = await fetchAudioFromVreden(videoInfo.title || query);
+        }
 
         await sock.sendMessage(chatId, {
             react: { text: "🎵", key: message.key }
         });
 
-        const safeTitle = (audio.title || videoInfo.title || "track")
+        const safeTitle = (audioData.title || videoInfo.title || "track")
             .replace(/[^\w\s-]/g, '')
             .trim() || "track";
 
         await sock.sendMessage(chatId, {
-            audio: { url: audio.url },
+            audio: { url: audioData.url },
             mimetype: 'audio/mpeg',
             fileName: `${safeTitle}.mp3`,
             ptt: false,
@@ -178,11 +164,11 @@ async function playCommand(sock, chatId, message) {
         });
 
     } catch (err) {
-        console.error("[PLAY ERROR]", err?.message || err?.stack || err);
+        console.error("[PLAY ERROR]", err?.message || err);
 
-        await sock.sendMessage(chatId, {
-            text: "❌ Failed to get audio right now.\nThe public converters can be unstable — try again in a few minutes or use a different song/link.",
-        }, { quoted: message });
+        let errorMsg = "❌ Failed to get audio.\n\nThe API (api.vreden.my.id) returned an error or no link.\nTry again later — it seems unstable right now (often 500/503 errors).";
+
+        await sock.sendMessage(chatId, { text: errorMsg }, { quoted: message });
 
         await sock.sendMessage(chatId, {
             react: { text: "❌", key: message.key }
