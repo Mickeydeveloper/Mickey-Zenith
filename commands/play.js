@@ -10,6 +10,12 @@ const AXIOS_CONFIG = {
     }
 };
 
+function extractVideoId(url) {
+    const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
+    const match = url.match(regex);
+    return match ? match[1] : null;
+}
+
 async function safeRequest(fn, maxAttempts = 3) {
     let lastErr;
     for (let i = 1; i <= maxAttempts; i++) {
@@ -17,19 +23,28 @@ async function safeRequest(fn, maxAttempts = 3) {
             return await fn();
         } catch (err) {
             lastErr = err;
-            if (i < maxAttempts) await new Promise(r => setTimeout(r, 700 * i));
+            if (i < maxAttempts) await new Promise(r => setTimeout(r, 800 * i));
         }
     }
-    throw lastErr || new Error("Request failed after retries");
+    throw lastErr || new Error("All request attempts failed");
 }
 
-async function fetchAudioData(videoUrl, titleForFallback) {
-    const sources = [
-        // Primary: convert2mp3s.com (simple & working in recent checks)
-        `https://convert2mp3s.com/api/single/mp3?url=${encodeURIComponent(videoUrl)}`,
+async function fetchAudioData(videoUrl, fallbackTitle) {
+    const videoId = extractVideoId(videoUrl);
+    if (!videoId && !videoUrl.includes('youtube.com') && !videoUrl.includes('youtu.be')) {
+        // If not URL, treat as search query fallback
+        throw new Error("Invalid YouTube URL for direct download");
+    }
 
-        // Fallback mirror style (some public proxies use similar endpoints)
-        `https://convert2mp3s.com/api/button/mp3?url=${encodeURIComponent(videoUrl)}`
+    const sources = [
+        // Primary: MatheusIshiyama repl.co API (active in recent GitHub mentions)
+        `https://youtube-download-api.matheusishiyama.repl.co/download?format=mp3&url=${encodeURIComponent(videoUrl)}`,
+
+        // Fallback: Vevioz-style direct (some instances expose JSON)
+        `https://api.vevioz.com/@api/button/mp3/${videoId}`,
+
+        // Another mirror style from GitHub topics (adjust if needed)
+        `https://youtube-download-api.matheusishiyama.repl.co/mp3?id=${videoId}`
     ];
 
     for (const apiUrl of sources) {
@@ -37,12 +52,17 @@ async function fetchAudioData(videoUrl, titleForFallback) {
             const res = await safeRequest(() => axios.get(apiUrl, AXIOS_CONFIG));
             const data = res.data;
 
-            // Many of these APIs return { url: "...", title: "...", ... } or similar
-            let downloadUrl = data.url || data.download || data.link || null;
-            let songTitle   = data.title || titleForFallback || "Audio";
-            let thumb       = data.thumbnail || data.thumb || null;
+            // Normalize different response formats
+            let downloadUrl = data.url || data.download || data.link || data.mp3 || data.audio || null;
+            let songTitle   = data.title || data.videoTitle || fallbackTitle || "Audio Track";
+            let thumb       = data.thumbnail || data.thumb || data.image || null;
 
-            if (downloadUrl && downloadUrl.startsWith('http')) {
+            // Some return direct redirect or stream URL
+            if (typeof data === 'string' && data.startsWith('http') && data.includes('.mp3')) {
+                downloadUrl = data;
+            }
+
+            if (downloadUrl && (downloadUrl.startsWith('http') || downloadUrl.includes('.mp3'))) {
                 return {
                     url: downloadUrl,
                     title: songTitle,
@@ -50,12 +70,12 @@ async function fetchAudioData(videoUrl, titleForFallback) {
                 };
             }
         } catch (e) {
-            // silent → try next source
-            console.log(`[AUDIO] Source failed: ${apiUrl} → ${e.message}`);
+            console.log(`[AUDIO SOURCE FAIL] ${apiUrl} → ${e.message || e}`);
+            // continue to next
         }
     }
 
-    throw new Error("No working audio download link found from available sources");
+    throw new Error("No valid MP3 download link from available sources (APIs may be temporary)");
 }
 
 async function playCommand(sock, chatId, message) {
@@ -86,7 +106,7 @@ async function playCommand(sock, chatId, message) {
 
         if (isUrl) {
             videoInfo.url = query.startsWith('http') ? query : `https://${query}`;
-            videoInfo.title = "YouTube Track";
+            videoInfo.title = "YouTube Audio";
         } else {
             await sock.sendMessage(chatId, {
                 react: { text: "🔎", key: message.key }
@@ -121,9 +141,8 @@ async function playCommand(sock, chatId, message) {
             thumbBuffer = await getBuffer("https://i.ytimg.com/vi/default.jpg");
         }
 
-        // Clean preview – no ads
         await sock.sendMessage(chatId, {
-            text: "🎶 Preparing your audio...",
+            text: "🎶 Preparing audio...",
             contextInfo: {
                 externalAdReply: {
                     title: videoInfo.title,
@@ -136,7 +155,6 @@ async function playCommand(sock, chatId, message) {
             }
         }, { quoted: message });
 
-        // Fetch the direct mp3 link
         const audio = await fetchAudioData(videoInfo.url, videoInfo.title);
 
         await sock.sendMessage(chatId, {
@@ -152,7 +170,7 @@ async function playCommand(sock, chatId, message) {
             mimetype: 'audio/mpeg',
             fileName: `${safeTitle}.mp3`,
             ptt: false,
-            waveform: [0, 15, 35, 60, 90, 100, 85, 60, 35, 15, 0]
+            waveform: [0, 20, 45, 75, 100, 90, 70, 45, 20, 0]
         }, { quoted: message });
 
         await sock.sendMessage(chatId, {
@@ -160,10 +178,10 @@ async function playCommand(sock, chatId, message) {
         });
 
     } catch (err) {
-        console.error("[PLAY ERROR]", err?.message || err);
+        console.error("[PLAY ERROR]", err?.message || err?.stack || err);
 
         await sock.sendMessage(chatId, {
-            text: "❌ Could not fetch the audio.\nThe link might be invalid, or try a different song/query later.",
+            text: "❌ Failed to get audio right now.\nThe public converters can be unstable — try again in a few minutes or use a different song/link.",
         }, { quoted: message });
 
         await sock.sendMessage(chatId, {
