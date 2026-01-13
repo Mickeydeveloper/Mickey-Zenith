@@ -98,7 +98,7 @@ async function handleChatbotMessage(sock, chatId, message) {
     const prompt = `You are Mickey, a helpful and friendly assistant. When replying, answer in a clear, helpful way and include your own opinion and a short suggestion at the end to ensure the solution works perfectly.\n\nUser: ${userText}`;
 
     const encoded = encodeURIComponent(prompt);
-    const baseUrl = 'https://okatsu-rolezapiiz.vercel.app/ai/gemini';
+    const baseUrl = 'https://ab-chatgpt4o.abrahamdw882.workers.dev/?q';
 
     let apiResult = null;
 
