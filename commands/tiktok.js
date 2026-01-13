@@ -72,7 +72,7 @@ async function validateVideoUrl(url) {
 }
 
 async function getTiktokDownload(url) {
-    const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/tiktok?url=${encodeURIComponent(url)}`;
+    const apiUrl = `https://apis-starlights-team.koyeb.app/starlight/tiktok?url=${encodeURIComponent(url)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     if (!res || !res.data) throw new Error('No response from TikTok API');
 
