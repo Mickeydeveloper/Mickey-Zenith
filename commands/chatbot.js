@@ -5,8 +5,8 @@ const isAdmin = require('../lib/isAdmin');
 
 const STATE_PATH = path.join(__dirname, '..', 'data', 'chatbot.json');
 
-// ← Add your API key here
-const API_KEY = "your_api_key_here";  // ← Replace with real key!
+// ← Replace with your REAL API key
+const API_KEY = "your_api_key_here";   // ← change this!
 
 function loadState() {
   try {
@@ -56,6 +56,7 @@ function extractMessageText(message) {
   if (msg.imageMessage?.caption) return msg.imageMessage.caption.trim();
   if (msg.videoMessage?.caption) return msg.videoMessage.caption.trim();
   if (msg.documentMessage?.caption) return msg.documentMessage.caption.trim();
+
   if (msg.buttonsMessage?.text || msg.buttonsMessage?.headerText) {
     return (msg.buttonsMessage.text || msg.buttonsMessage.headerText).trim();
   }
@@ -63,6 +64,7 @@ function extractMessageText(message) {
     return msg.templateMessage.hydratedTemplate.hydratedContentText.trim();
   }
   if (msg.interactiveMessage?.body?.text) return msg.interactiveMessage.body.text.trim();
+
   if (msg.listMessage?.description) return msg.listMessage.description.trim();
 
   return '';
@@ -79,19 +81,17 @@ async function handleChatbotMessage(sock, chatId, message) {
     const userText = extractMessageText(message);
     if (!userText) return;
 
-    console.log(`[Chatbot] Processing in \( {chatId}: " \){userText.substring(0, 70)}${userText.length > 70 ? '...' : ''}"`);
+    console.log(`[Chatbot] \( {chatId} → " \){userText.substring(0, 70)}${userText.length > 70 ? '...' : ''}"`);
 
-    // typing indicator
+    // Show typing
     try {
       await sock.sendPresenceUpdate('composing', chatId);
-      await new Promise(r => setTimeout(r, 700 + Math.random() * 900));
+      await new Promise(r => setTimeout(r, 600 + Math.random() * 800));
     } catch {}
 
-    // New API format
-    const query = `You are Mickey, a helpful and friendly assistant. When replying, answer in a clear, helpful way and include your own opinion and a short suggestion at the end to ensure the solution works perfectly.\n\nUser: ${userText}`;
-
-    const encodedQuery = encodeURIComponent(query);
-    const apiUrl = `https://apis.davidcyriltech.my.id/ai/chatbot?query=\( {encodedQuery}&apikey= \){API_KEY}`;
+    // ──── Only user message is sent ────
+    const encoded = encodeURIComponent(userText);
+    const apiUrl = `https://apis.davidcyriltech.my.id/ai/chatbot?query=\( {encoded}&apikey= \){API_KEY}`;
 
     let apiResult = null;
 
@@ -99,53 +99,122 @@ async function handleChatbotMessage(sock, chatId, message) {
       const res = await fetch(apiUrl, {
         method: 'GET',
         headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(20000)
+        signal: AbortSignal.timeout(25000)
       });
 
       if (!res.ok) {
-        throw new Error(`API responded with status ${res.status}`);
+        const errBody = await res.text().catch(() => '(no body)');
+        console.log(`[API] ${res.status} - ${errBody.slice(0, 200)}`);
+        throw new Error(`HTTP ${res.status}`);
       }
 
       const data = await res.json();
 
-      // Try to find the response in common keys
-      apiResult = data?.response 
-        || data?.message 
-        || data?.result 
-        || data?.answer 
-        || data?.data 
-        || data?.text
-        || (typeof data === 'string' ? data : null)
-        || data?.content;
+      // Debug: see what the API actually returns
+      console.log('[API RAW]', JSON.stringify(data, null, 2));
 
-      if (!apiResult && data?.error) {
-        console.log('[Chatbot] API error:', data.error);
-      }
+      apiResult =
+        data?.response ||
+        data?.message ||
+        data?.result ||
+        data?.answer ||
+        data?.text ||
+        data?.content ||
+        data?.output ||
+        (typeof data === 'string' ? data : null);
 
     } catch (err) {
-      console.error('[Chatbot] API call failed:', err.message);
+      console.error('[API request failed]', err.message);
     }
 
-    // Fallback message if API fails completely
     if (!apiResult) {
       await sock.sendMessage(chatId, { 
-        text: '❌ Sorry, AI is not responding right now. Please try again in a minute!' 
+        text: '❌ AI is not responding right now. Try again soon.' 
       }, { quoted: message });
       return;
     }
 
-    const cleanResponse = (apiResult || '').toString().trim();
+    const replyText = String(apiResult).trim();
 
-    console.log(`[Chatbot] Replying (${cleanResponse.length} chars)`);
-
-    await sock.sendMessage(chatId, { text: cleanResponse }, { quoted: message });
+    await sock.sendMessage(chatId, { text: replyText }, { quoted: message });
 
   } catch (err) {
-    console.error('Chatbot error:', err?.message || err);
+    console.error('Chatbot error:', err);
   }
 }
 
-// The toggle command part remains unchanged
-// ... (groupChatbotToggleCommand stays the same)
+async function groupChatbotToggleCommand(sock, chatId, message, args) {
+  try {
+    const argStr = (args || '').trim().toLowerCase();
 
-module.exports = { handleChatbotMessage, groupChatbotToggleCommand };
+    if (argStr.startsWith('private')) {
+      const parts = argStr.split(/\s+/);
+      const sub = parts[1];
+      if (!sub || !['on', 'off', 'status'].includes(sub)) {
+        return sock.sendMessage(chatId, { text: 'Usage: .chatbot private on|off|status' }, { quoted: message });
+      }
+
+      const sender = message.key.participant || message.key.remoteJid;
+      const isOwner = message.key.fromMe || await require('../lib/isOwner')(sender, sock, chatId);
+      if (!isOwner) return sock.sendMessage(chatId, { text: 'Owner only command.' }, { quoted: message });
+
+      const state = loadState();
+      if (sub === 'status') {
+        return sock.sendMessage(chatId, { text: `Private mode: *${state.private ? 'ON' : 'OFF'}*` }, { quoted: message });
+      }
+
+      state.private = sub === 'on';
+      saveState(state);
+      return sock.sendMessage(chatId, { text: `Private mode now *${state.private ? 'ON' : 'OFF'}*` }, { quoted: message });
+    }
+
+    if (!chatId.endsWith('@g.us')) {
+      return sock.sendMessage(chatId, { text: 'Use in groups or .chatbot private ...' }, { quoted: message });
+    }
+
+    const sender = message.key.participant || message.key.remoteJid;
+    const adminInfo = await isAdmin(sock, chatId, sender);
+    if (!adminInfo.isSenderAdmin && !message.key.fromMe) {
+      return sock.sendMessage(chatId, { text: 'Admins only' }, { quoted: message });
+    }
+
+    const onoff = argStr;
+    if (!onoff || !['on', 'off', 'status'].includes(onoff)) {
+      return sock.sendMessage(chatId, { text: 'Usage: .chatbot on|off|status' }, { quoted: message });
+    }
+
+    const state = loadState();
+    state.perGroup = state.perGroup || {};
+
+    if (onoff === 'status') {
+      const lib = require('../lib/index');
+      const cfg = await lib.getChatbot(chatId);
+      const enabled = !!state.perGroup[chatId] || !!(cfg && cfg.enabled);
+      return sock.sendMessage(chatId, { text: `Chatbot: *${enabled ? 'ON' : 'OFF'}*` }, { quoted: message });
+    }
+
+    const lib = require('../lib/index');
+    state.perGroup[chatId] = onoff === 'on';
+    saveState(state);
+
+    try {
+      if (state.perGroup[chatId]) await lib.setChatbot(chatId, true);
+      else await lib.removeChatbot(chatId);
+    } catch (e) {
+      console.log('Sync failed:', e?.message);
+    }
+
+    return sock.sendMessage(chatId, { 
+      text: `Chatbot now ${state.perGroup[chatId] ? 'ON' : 'OFF'}!` 
+    }, { quoted: message });
+
+  } catch (e) {
+    console.error('Toggle error:', e);
+    sock.sendMessage(chatId, { text: 'Toggle failed.' }, { quoted: message });
+  }
+}
+
+module.exports = {
+  handleChatbotMessage,
+  groupChatbotToggleCommand
+};
