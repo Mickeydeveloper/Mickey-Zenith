@@ -1,6 +1,12 @@
 
 const axios = require('axios');
 const yts = require('yt-search');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { pipeline } = require('stream');
+const { promisify } = require('util');
+const streamPipeline = promisify(pipeline);
 
 const AXIOS_DEFAULTS = {
 	timeout: 60000,
@@ -85,31 +91,56 @@ async function playCommand(sock, chatId, message) {
 
 		const fileName = (audioData.title || title || 'audio').replace(/[\\/:*?"<>|]/g, '').trim() + '.mp3';
 
-		// Download the audio directly from the API and send as binary
+		// Download the audio directly from the API to a temp file and send as a local file
 		const downloadUrl = audioData.download;
-		let audioBuffer;
+		const tmpPath = path.join(os.tmpdir(), `${Date.now()}-${fileName}`);
+		const MAX_BYTES = 25 * 1024 * 1024; // 25 MB safety limit
 		try {
-			const res = await tryRequest(() => axios.get(downloadUrl, { ...AXIOS_DEFAULTS, responseType: 'arraybuffer', timeout: 120000 }));
+			const res = await tryRequest(() => axios.get(downloadUrl, { ...AXIOS_DEFAULTS, responseType: 'stream', timeout: 120000 }));
 			const contentLength = parseInt(res.headers?.['content-length'] || 0, 10);
-			const MAX_BYTES = 25 * 1024 * 1024; // 25 MB safety limit
 			if (contentLength && contentLength > MAX_BYTES) {
 				await sock.sendMessage(chatId, { text: `File is too large to upload (${(contentLength / (1024*1024)).toFixed(2)} MB). Sending a download link instead:\n${downloadUrl}` }, { quoted: message });
 				return;
 			}
-			audioBuffer = Buffer.from(res.data);
+
+			// Stream to temp file and abort if it grows too large when content-length absent
+			let written = 0;
+			res.data.on('data', chunk => {
+				written += chunk.length;
+				if (!contentLength && written > MAX_BYTES) {
+					res.data.destroy(new Error('File exceeds size limit'));
+				}
+			});
+
+			await streamPipeline(res.data, fs.createWriteStream(tmpPath));
+
+			// Final size check
+			const stats = fs.statSync(tmpPath);
+			if (stats.size > MAX_BYTES) {
+				fs.unlinkSync(tmpPath);
+				await sock.sendMessage(chatId, { text: `File is too large to upload (${(stats.size/(1024*1024)).toFixed(2)} MB). Sending a download link instead:\n${downloadUrl}` }, { quoted: message });
+				return;
+			}
 		} catch (e) {
 			console.error('[PLAY] download error:', e?.message || e);
-			// Fallback: send the direct URL if buffer download fails
+			// Fallback: send the direct URL if stream download fails
+			try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
 			await sock.sendMessage(chatId, { text: 'Failed to download audio file directly, sending link instead.' }, { quoted: message });
 			await sock.sendMessage(chatId, { text: downloadUrl }, { quoted: message });
 			return;
 		}
 
-		await sock.sendMessage(chatId, {
-			audio: audioBuffer,
-			mimetype: 'audio/mpeg',
-			fileName
-		}, { quoted: message });
+		// Send as a local file (not a PTT/anonymous upload)
+		try {
+			await sock.sendMessage(chatId, {
+				audio: { url: tmpPath },
+				mimetype: 'audio/mpeg',
+				fileName
+			}, { quoted: message });
+		} finally {
+			// Clean up temp file
+			try { fs.unlinkSync(tmpPath); } catch (e) {}
+		}
 
 	} catch (error) {
 		console.error('[PLAY] Command Error:', error?.message || error);
