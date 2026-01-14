@@ -113,13 +113,13 @@ async function playCommand(sock, chatId, message) {
         // Sending reaction
         await sock.sendMessage(chatId, { react: { text: "🎵", key: message.key } });
 
-        // Send audio
+        // Send audio – FIXED VERSION
         await sock.sendMessage(chatId, {
             audio: { url: audioUrl },
-            mimetype: 'audio/mpeg',
-            fileName: `${title.replace(/[^\w\s-]/g, '')}.mp3`,
+            mimetype: 'audio/mp4',                    // Key fix: most compatible in 2025–2026
+            fileName: `${title.replace(/[^\w\s-]/g, '')}.m4a`,  // .m4a instead of .mp3
             ptt: false,
-            waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0]
+            waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0]  // optional, but nice
         }, { quoted: message });
 
         // Success
