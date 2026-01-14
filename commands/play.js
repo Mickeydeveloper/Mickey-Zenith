@@ -1,5 +1,6 @@
 const axios = require('axios');
 const yts = require('yt-search');
+const { getBuffer } = require("../lib/myfunc");
 
 const AXIOS_DEFAULTS = {
     timeout: 60000,
@@ -22,96 +23,112 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-async function getYupraAudioByUrl(youtubeUrl) {
-    // Craft a clear instruction/prompt so the AI understands it's supposed to act as a downloader
-    const prompt = `Download this YouTube video as high-quality MP3 audio and give me only the direct download link (nothing else in the response): ${youtubeUrl}`;
+async function getYupraDownload(youtubeUrl) {
+    if (!youtubeUrl || !youtubeUrl.includes('youtu')) {
+        throw new Error('Invalid YouTube URL provided to Yupra API');
+    }
 
-    const apiUrl = `https://api.yupra.my.id/api/ai/gpt5?text=${encodeURIComponent(prompt)}`;
-
+    const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
 
-    let responseText = res?.data?.response || res?.data?.result || res?.data?.text || '';
-
-    // Try to extract a clean URL from whatever the AI returns
-    // This is brittle — adjust regex/pattern based on actual AI output format
-    const urlMatch = responseText.match(/(https?:\/\/[^\s]+)/i);
-    if (urlMatch && urlMatch[1].endsWith('.mp3')) {
+    if (res?.data?.success && res?.data?.data?.download_url) {
         return {
-            download: urlMatch[1],
-            title: 'AI Downloaded Audio'  // fallback title; ideally extract from search
+            download: res.data.data.download_url,
+            title: res.data.data.title || 'Unknown Song',
+            thumbnail: res.data.data.thumbnail || null
         };
     }
 
-    // If no clean MP3 link found, you could try more parsing logic here
-    // e.g. look for patterns like "link: https://..." or JSON in response
-
-    throw new Error('Yupra AI did not return a valid MP3 download link. Raw response: ' + responseText.slice(0, 200));
+    throw new Error(
+        res?.data?.message ||
+        'Yupra API did not return a valid download link (success=false or missing data.download_url)'
+    );
 }
 
 async function playCommand(sock, chatId, message) {
     try {
-        const raw = message.message?.conversation?.trim() || 
-                    message.message?.extendedTextMessage?.text?.trim() || '';
-        const args = raw.split(/\s+/).slice(1).join(' ').trim();
+        const text = message.message?.conversation || message.message?.extendedTextMessage?.text || '';
+        const queryText = text.split(' ').slice(1).join(' ').trim();
 
-        if (!args) {
-            await sock.sendMessage(chatId, { text: 'Usage: .play <YouTube link or search terms>' }, { quoted: message });
+        if (!queryText) {
+            await sock.sendMessage(chatId, { text: '⚠️ Usage: .play <song name or YouTube link>' }, { quoted: message });
             return;
         }
 
-        let input = args;
-        let title = '';
-        let thumbnail = '';
+        // Immediate reaction
+        await sock.sendMessage(chatId, {
+            react: { text: "🔍", key: message.key }
+        });
 
-        if (!input.startsWith('http://') && !input.startsWith('https://')) {
-            const { videos } = await yts(input);
-            if (!videos || videos.length === 0) {
-                await sock.sendMessage(chatId, { text: 'No results found for your query.' }, { quoted: message });
+        let video;
+        if (queryText.includes('youtube.com') || queryText.includes('youtu.be')) {
+            video = { url: queryText, title: 'YouTube Video', timestamp: 'Loading...' };
+        } else {
+            await sock.sendMessage(chatId, { react: { text: "🔎", key: message.key } }); // Searching
+            const search = await yts(queryText);
+            if (!search || !search.videos.length) {
+                await sock.sendMessage(chatId, { text: '❌ No results found for your query.' }, { quoted: message });
+                await sock.sendMessage(chatId, { react: { text: "❌", key: message.key } });
                 return;
             }
-            input = videos[0].url;
-            title = videos[0].title;
-            thumbnail = videos[0].thumbnail;
+            video = search.videos[0];
         }
 
-        // Send preview/info while "downloading"
+        // Downloading reaction
+        await sock.sendMessage(chatId, { react: { text: "⬇️", key: message.key } });
+
+        // Thumbnail
+        let thumbnailBuffer;
         try {
-            const captionTitle = title || input;
-            if (thumbnail) {
-                await sock.sendMessage(chatId, { 
-                    image: { url: thumbnail }, 
-                    caption: `*${captionTitle}*\nFetching audio via AI...` 
-                }, { quoted: message });
-            } else {
-                await sock.sendMessage(chatId, { text: `Fetching audio for: ${captionTitle}` }, { quoted: message });
-            }
-        } catch (e) { 
-            console.error('[PLAY] thumb/info error:', e?.message || e); 
+            thumbnailBuffer = await getBuffer(video.thumbnail || "https://water-billimg.onrender.com/1761205727440.png");
+        } catch {
+            thumbnailBuffer = await getBuffer("https://water-billimg.onrender.com/1761205727440.png");
         }
 
-        // Basic YouTube URL validation
-        const urls = input.match(/(?:https?:\/\/)?(?:youtu\.be\/|(?:www\.|m\.)?youtube\.com\/(?:watch\?v=|v\/|embed\/|shorts\/|playlist\?list=)?)([a-zA-Z0-9_-]{11})/gi);
-        if (!urls) {
-            await sock.sendMessage(chatId, { text: 'This is not a valid YouTube link!' }, { quoted: message });
-            return;
-        }
-
-        // Try the new AI-based downloader
-        const audioData = await getYupraAudioByUrl(input);
-
-        const fileName = (title || audioData.title || 'audio').replace(/[\\/:*?"<>|]/g, '').trim() + '.mp3';
-
+        // Preview message
         await sock.sendMessage(chatId, {
-            audio: { url: audioData.download },
-            mimetype: 'audio/mpeg',
-            fileName
+            text: "🎶 *Fetching your song...*",
+            contextInfo: {
+                externalAdReply: {
+                    title: video.title || "Unknown Title",
+                    body: `Duration: ${video.timestamp || 'Unknown'} • Mickey Glitch™`,
+                    thumbnail: thumbnailBuffer,
+                    mediaType: 1,
+                    renderLargerThumbnail: true,
+                    sourceUrl: video.url || "https://youtube.com"
+                }
+            }
         }, { quoted: message });
 
-    } catch (error) {
-        console.error('[PLAY] Command Error:', error?.message || error);
-        await sock.sendMessage(chatId, { 
-            text: 'Audio fetch failed: ' + (error?.message || 'Unknown error') 
+        // Fetch download from Yupra
+        const audioData = await getYupraDownload(video.url);
+
+        const audioUrl = audioData.download;
+        const title = audioData.title || video.title || 'song';
+
+        if (!audioUrl) {
+            throw new Error("No download link received from Yupra API");
+        }
+
+        // Sending reaction
+        await sock.sendMessage(chatId, { react: { text: "🎵", key: message.key } });
+
+        // Send audio
+        await sock.sendMessage(chatId, {
+            audio: { url: audioUrl },
+            mimetype: 'audio/mpeg',
+            fileName: `${title.replace(/[^\w\s-]/g, '')}.mp3`,
+            ptt: false,
+            waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0]
         }, { quoted: message });
+
+        // Success
+        await sock.sendMessage(chatId, { react: { text: "✅", key: message.key } });
+
+    } catch (err) {
+        console.error('Play command error:', err.message || err);
+        await sock.sendMessage(chatId, { text: '❌ Failed to download or send the song. Try again later.' }, { quoted: message });
+        await sock.sendMessage(chatId, { react: { text: "❌", key: message.key } });
     }
 }
 
