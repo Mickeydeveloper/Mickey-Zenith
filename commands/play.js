@@ -200,13 +200,25 @@ async function songCommand(sock, chatId, message) {
                         }
                 }
 
-                // Send buffer as MP3
-                await sock.sendMessage(chatId, {
+                // Send buffer as MP3 with thumbnail
+                const thumbnailUrl = audioData.thumbnail || video.thumbnail;
+                
+                const messageContent = {
                         audio: finalBuffer,
                         mimetype: finalMimetype,
                         fileName: `${(audioData.title || video.title || 'song')}.${finalExtension}`,
-                        ptt: false
-                }, { quoted: message });
+                        ptt: false,
+                        caption: `🎵 *${audioData.title || video.title}*\n\n✨ Mickey Glitch Music Bot`
+                };
+                
+                if (thumbnailUrl) {
+                        messageContent.jpegThumbnail = await axios.get(thumbnailUrl, { 
+                                responseType: 'arraybuffer',
+                                timeout: 10000
+                        }).then(res => Buffer.from(res.data)).catch(() => null);
+                }
+                
+                await sock.sendMessage(chatId, messageContent, { quoted: message });
 
                 // Cleanup: Delete temp files created during conversion
                 try {
