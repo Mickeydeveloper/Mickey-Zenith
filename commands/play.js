@@ -143,13 +143,43 @@ async function playCommand(sock, chatId, message) {
             attempts.push(`okatsu:${e1?.message || e1}`);
             // Notify user that Yupra failed and we'll attempt a direct download
             await sock.sendMessage(chatId, { text: '⚠️ Yupra API failed. Trying a direct download — this may take longer and can be size-limited.' }, { quoted: message });
+            let ytdlSuccess = false;
             try {
                 const ytdlData = await getYtdlAudioBuffer(video.url);
                 audioData = { buffer: ytdlData.buffer, title: ytdlData.title || video.title, mime: ytdlData.mime };
                 attempts.push('ytdl-direct');
+                ytdlSuccess = true;
             } catch (e2) {
                 attempts.push(`ytdl:${e2?.message || e2}`);
-                throw new Error(`No download available. Attempts: ${attempts.join(' | ')}`);
+                // If the error suggests the video is unavailable (410/Status code), try searching for alternative uploads
+                const msg = String(e2?.message || '').toLowerCase();
+                if (msg.includes('410') || msg.includes('status code') || msg.includes('unavailable')) {
+                    await sock.sendMessage(chatId, { text: 'ℹ️ Original video appears unavailable; searching YouTube for alternatives...' }, { quoted: message });
+                    try {
+                        const searchAlt = await yts(video.title || queryText);
+                        if (searchAlt && Array.isArray(searchAlt.videos) && searchAlt.videos.length) {
+                            for (let i = 0; i < Math.min(3, searchAlt.videos.length); i++) {
+                                const alt = searchAlt.videos[i];
+                                if (!alt || !alt.url || alt.url === video.url) continue;
+                                try {
+                                    const altYtdl = await getYtdlAudioBuffer(alt.url);
+                                    audioData = { buffer: altYtdl.buffer, title: altYtdl.title || alt.title || video.title, mime: altYtdl.mime };
+                                    attempts.push(`ytdl-alt:${alt.url}`);
+                                    ytdlSuccess = true;
+                                    break;
+                                } catch (errAlt) {
+                                    attempts.push(`ytdl-alt:${errAlt?.message || errAlt}`);
+                                }
+                            }
+                        }
+                    } catch (errSearch) {
+                        attempts.push(`search:${errSearch?.message || errSearch}`);
+                    }
+                }
+
+                if (!ytdlSuccess) {
+                    throw new Error(`No download available. Attempts: ${attempts.join(' | ')}`);
+                }
             }
         }
 
