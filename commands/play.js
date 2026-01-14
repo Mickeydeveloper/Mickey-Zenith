@@ -31,7 +31,7 @@ async function getIzumiAudioByUrl(youtubeUrl) {
 }
 
 async function getOkatsuAudioByUrl(youtubeUrl) {
-	const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
+	const apiUrl = `https://api.vreden.my.id/api/v1/download/youtube/audio?url=${encodeURIComponent(youtubeUrl)}`;
 	const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
 	if (res?.data?.result?.mp3) return { download: res.data.result.mp3, title: res.data.result.title };
 	// some variants return url directly
