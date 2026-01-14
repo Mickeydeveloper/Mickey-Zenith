@@ -39,15 +39,56 @@ async function getIzumiDownloadByQuery(query) {
 
 async function getOkatsuDownloadByUrl(youtubeUrl) {
     const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-    if (res?.data?.dl) {
-        return {
-            download: res.data.dl,
-            title: res.data.title || 'Unknown Song',
-            thumbnail: res.data.thumb
-        };
+    try {
+        const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+        // Basic sanity checks
+        if (!res || res.status !== 200) throw new Error(`Unexpected status ${res?.status}`);
+        if (res?.data?.dl) {
+            return {
+                download: res.data.dl,
+                title: res.data.title || 'Unknown Song',
+                thumbnail: res.data.thumb
+            };
+        }
+        throw new Error('Okatsu ytmp3 returned no download');
+    } catch (err) {
+        // Include the original error message to help debugging
+        throw new Error(`Okatsu failed: ${err?.message || err}`);
     }
-    throw new Error('Okatsu ytmp3 returned no download');
+}
+
+// Last-resort: try to download the audio directly using ytdl-core
+const ytdl = require('ytdl-core');
+const { PassThrough } = require('stream');
+
+async function getYtdlAudioBuffer(youtubeUrl, maxBytes = 16 * 1024 * 1024) {
+    if (!ytdl.validateURL(youtubeUrl)) throw new Error('Invalid YouTube URL');
+
+    const info = await ytdl.getInfo(youtubeUrl);
+    const audioFormats = info.formats.filter(f => f.mimeType && f.mimeType.includes('audio'));
+    if (!audioFormats.length) throw new Error('No audio formats available');
+
+    // Prefer m4a or webm audio with a reasonable bitrate
+    const best = audioFormats.sort((a, b) => (b.audioBitrate || 0) - (a.audioBitrate || 0))[0];
+    const mime = (best.mimeType && best.mimeType.split(';')[0]) || 'audio/mpeg';
+
+    return new Promise((resolve, reject) => {
+        const stream = ytdl.downloadFromInfo(info, { quality: best.itag, highWaterMark: 1 << 25 });
+        const chunks = [];
+        let length = 0;
+        stream.on('data', (c) => {
+            length += c.length;
+            if (length > maxBytes) {
+                stream.destroy();
+                return reject(new Error(`Direct download exceeds ${Math.round(maxBytes / (1024 * 1024))} MB limit`));
+            }
+            chunks.push(c);
+        });
+        stream.on('end', () => {
+            resolve({ buffer: Buffer.concat(chunks), title: info.videoDetails?.title || 'song', mime });
+        });
+        stream.on('error', (err) => reject(err));
+    });
 }
 
 async function playCommand(sock, chatId, message) {
@@ -105,20 +146,42 @@ async function playCommand(sock, chatId, message) {
             }
         }, { quoted: message });
 
-        // Get download link with fallbacks
+        // Get download link with fallbacks and a direct fallback (ytdl) if APIs are down
         let audioData;
+        const attempts = [];
         try {
             audioData = await getIzumiDownloadByUrl(video.url);
+            attempts.push('izumi-url');
         } catch (e1) {
+            attempts.push(`izumi-url:${e1?.message || e1}`);
             try {
                 audioData = await getIzumiDownloadByQuery(video.title || queryText);
+                attempts.push('izumi-query');
             } catch (e2) {
-                audioData = await getOkatsuDownloadByUrl(video.url);
+                attempts.push(`izumi-query:${e2?.message || e2}`);
+                try {
+                    audioData = await getOkatsuDownloadByUrl(video.url);
+                    attempts.push('okatsu');
+                } catch (e3) {
+                    attempts.push(`okatsu:${e3?.message || e3}`);
+                    // Notify user that we'll attempt a direct download
+                    await sock.sendMessage(chatId, { text: '⚠️ All external download APIs failed. Trying a direct download — this may take longer and can be size-limited.' }, { quoted: message });
+                    try {
+                        const ytdlData = await getYtdlAudioBuffer(video.url);
+                        audioData = { buffer: ytdlData.buffer, title: ytdlData.title || video.title, mime: ytdlData.mime };
+                        attempts.push('ytdl-direct');
+                    } catch (e4) {
+                        attempts.push(`ytdl:${e4?.message || e4}`);
+                        throw new Error(`No download available. Attempts: ${attempts.join(' | ')}`);
+                    }
+                }
             }
         }
 
+        const audioBuffer = audioData.buffer;
         const audioUrl = audioData.download || audioData.dl || audioData.url;
         const title = audioData.title || video.title || 'song';
+        const mimetype = audioData.mimetype || audioData.mime || 'audio/mpeg';
 
         if (!audioUrl) {
             throw new Error("No download link received from any API");
@@ -127,21 +190,33 @@ async function playCommand(sock, chatId, message) {
         // Update reaction to sending
         await sock.sendMessage(chatId, { react: { text: "🎵", key: message.key } });
 
-        // Send the audio
-        await sock.sendMessage(chatId, {
-            audio: { url: audioUrl },
-            mimetype: 'audio/mpeg',
-            fileName: `${title.replace(/[^\w\s-]/g, '')}.mp3`,
-            ptt: false,
-            waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0] // Optional: visual waveform
-        }, { quoted: message });
+        // Send the audio (buffer from ytdl or URL from API)
+        const safeFileName = `${title.replace(/[^\w\s-]/g, '')}.mp3`;
+        if (audioBuffer) {
+            await sock.sendMessage(chatId, {
+                audio: audioBuffer,
+                mimetype,
+                fileName: safeFileName,
+                ptt: false,
+                waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0]
+            }, { quoted: message });
+        } else {
+            await sock.sendMessage(chatId, {
+                audio: { url: audioUrl },
+                mimetype,
+                fileName: safeFileName,
+                ptt: false,
+                waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0]
+            }, { quoted: message });
+        }
 
         // Final success reaction (no extra "Enjoy" message or second ad)
         await sock.sendMessage(chatId, { react: { text: "✅", key: message.key } });
 
     } catch (err) {
         console.error('Play command error:', err);
-        await sock.sendMessage(chatId, { text: '❌ Failed to download or send the song. Please try again later.' }, { quoted: message });
+        const short = err?.message ? ` Reason: ${err.message}` : '';
+        await sock.sendMessage(chatId, { text: `❌ Failed to download or send the song.${short} Please try again later.` }, { quoted: message });
         await sock.sendMessage(chatId, {
             react: { text: "❌", key: message.key }
         });
