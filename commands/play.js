@@ -59,7 +59,17 @@ async function playCommand(sock, chatId, message) {
 
     let video;
     if (queryText.includes('youtube.com') || queryText.includes('youtu.be')) {
-      video = { url: queryText, title: 'YouTube Video', timestamp: 'Loading...' };
+      // If the user provided a URL, try to resolve metadata (title/thumbnail) via yt-search
+      try {
+        const directSearch = await yts(queryText);
+        if (directSearch && Array.isArray(directSearch.videos) && directSearch.videos.length) {
+          video = directSearch.videos[0];
+        } else {
+          video = { url: queryText, title: 'YouTube Video', timestamp: 'Loading...' };
+        }
+      } catch (e) {
+        video = { url: queryText, title: 'YouTube Video', timestamp: 'Loading...' };
+      }
     } else {
       await sock.sendMessage(chatId, { react: { text: '🔎', key: message.key } });
       const search = await yts(queryText);
@@ -69,6 +79,15 @@ async function playCommand(sock, chatId, message) {
         return;
       }
       video = search.videos[0];
+    }
+
+    // Inform the user and send the selected YouTube URL to Yupra automatically
+    try {
+      if (video && video.url) {
+        await sock.sendMessage(chatId, { text: `🔎 Found: ${video.title}\n🔗 ${video.url}\n➡️ Sending to Yupra API...` }, { quoted: message });
+      }
+    } catch (e) {
+      console.error('Failed to notify user of selected video:', e);
     }
 
     // Update reaction to downloading
