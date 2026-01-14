@@ -37,7 +37,7 @@ async function getIzumiVideoByUrl(youtubeUrl) {
 }
 
 async function getOkatsuVideoByUrl(youtubeUrl) {
-    const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`;
+    const apiUrl = `https://api.vreden.my.id/api/v1/download/youtube/video?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
     // shape: { status, creator, url, result: { status, title, mp4 } }
     if (res?.data?.result?.mp4) {
