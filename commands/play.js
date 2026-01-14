@@ -5,7 +5,7 @@ const ffmpeg = require('fluent-ffmpeg');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 const { Readable } = require('stream');
 
-ffmpeg.setFfmpegPath(ffmpegInstaller.path); // Auto-set ffmpeg path
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const AXIOS_DEFAULTS = {
     timeout: 60000,
@@ -15,14 +15,14 @@ const AXIOS_DEFAULTS = {
     }
 };
 
-async function tryRequest(getter, attempts = 3) {
+async function tryRequest(getter, attempts = 4) {  // increased attempts
     let lastError;
     for (let attempt = 1; attempt <= attempts; attempt++) {
         try {
             return await getter();
         } catch (err) {
             lastError = err;
-            if (attempt < attempts) await new Promise(r => setTimeout(r, 1000 * attempt));
+            if (attempt < attempts) await new Promise(r => setTimeout(r, 1500 * attempt));
         }
     }
     throw lastError;
@@ -30,7 +30,7 @@ async function tryRequest(getter, attempts = 3) {
 
 async function getYupraDownload(youtubeUrl) {
     if (!youtubeUrl || !youtubeUrl.includes('youtu')) {
-        throw new Error('Invalid YouTube URL provided to Yupra API');
+        throw new Error('Invalid YouTube URL');
     }
 
     const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
@@ -44,10 +44,7 @@ async function getYupraDownload(youtubeUrl) {
         };
     }
 
-    throw new Error(
-        res?.data?.message ||
-        'Yupra API did not return a valid download link (success=false or missing data.download_url)'
-    );
+    throw new Error(res?.data?.message || 'No valid download link from API');
 }
 
 async function convertToOpus(buffer) {
@@ -57,11 +54,11 @@ async function convertToOpus(buffer) {
 
         ffmpeg(inputStream)
             .audioCodec('libopus')
-            .audioChannels(1)          // Mono (WhatsApp voice notes require mono)
-            .audioFrequency(48000)     // Standard for Opus in WhatsApp
-            .audioBitrate(64)          // Good quality + small size
+            .audioChannels(1)
+            .audioFrequency(48000)
+            .audioBitrate(64)
             .format('ogg')
-            .on('error', (err) => reject(new Error(`FFmpeg error: ${err.message}`)))
+            .on('error', (err) => reject(new Error(`FFmpeg: ${err.message}`)))
             .on('data', (chunk) => chunks.push(chunk))
             .on('end', () => resolve(Buffer.concat(chunks)))
             .pipe();
@@ -74,7 +71,7 @@ async function playCommand(sock, chatId, message) {
         const queryText = text.split(' ').slice(1).join(' ').trim();
 
         if (!queryText) {
-            await sock.sendMessage(chatId, { text: '⚠️ Usage: .play <song name or YouTube link>' }, { quoted: message });
+            await sock.sendMessage(chatId, { text: '⚠️ Usage: .play <song name or link>' }, { quoted: message });
             return;
         }
 
@@ -86,8 +83,8 @@ async function playCommand(sock, chatId, message) {
         } else {
             await sock.sendMessage(chatId, { react: { text: "🔎", key: message.key } });
             const search = await yts(queryText);
-            if (!search || !search.videos.length) {
-                await sock.sendMessage(chatId, { text: '❌ No results found for your query.' }, { quoted: message });
+            if (!search?.videos?.length) {
+                await sock.sendMessage(chatId, { text: '❌ No results found.' }, { quoted: message });
                 await sock.sendMessage(chatId, { react: { text: "❌", key: message.key } });
                 return;
             }
@@ -121,38 +118,56 @@ async function playCommand(sock, chatId, message) {
         const audioUrl = audioData.download;
         const title = audioData.title || video.title || 'song';
 
-        if (!audioUrl) {
-            throw new Error("No download link received from Yupra API");
+        if (!audioUrl) throw new Error("No download link");
+
+        // Quick check if link is alive
+        try {
+            await axios.head(audioUrl, { timeout: 10000 });
+        } catch (e) {
+            throw new Error(`Download link invalid/expired (${e.message})`);
         }
 
         await sock.sendMessage(chatId, { react: { text: "📥", key: message.key } });
 
-        // Download original audio
-        const audioResponse = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 90000 });
-        const mp3Buffer = Buffer.from(audioResponse.data);
+        // Improved download
+        const audioResponse = await tryRequest(() => axios.get(audioUrl, {
+            responseType: 'arraybuffer',
+            timeout: 120000,
+            headers: { 
+                'User-Agent': AXIOS_DEFAULTS.headers['User-Agent'],
+                'Referer': 'https://youtube.com/'
+            }
+        }));
 
-        // Convert to Opus/OGG
+        const audioBuffer = Buffer.from(audioResponse.data);
+
         await sock.sendMessage(chatId, { react: { text: "🔄", key: message.key } });
-        const opusBuffer = await convertToOpus(mp3Buffer);
+        const opusBuffer = await convertToOpus(audioBuffer);
 
         await sock.sendMessage(chatId, { react: { text: "🎵", key: message.key } });
 
-        // Send as voice note (ptt: true) – this fixes the error
         await sock.sendMessage(chatId, {
             audio: opusBuffer,
             mimetype: 'audio/ogg; codecs=opus',
-            ptt: true,                                 // ← Key: makes it a voice note
+            ptt: true,
             fileName: `${title.replace(/[^\w\s-]/g, '')}.ogg`,
-            waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0, 30, 50, 70, 90] // Longer waveform looks better
+            waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0, 30, 50, 70, 90]
         }, { quoted: message });
 
         await sock.sendMessage(chatId, { react: { text: "✅", key: message.key } });
 
     } catch (err) {
-        console.error('Play command error:', err.message || err);
-        await sock.sendMessage(chatId, { text: '❌ Failed to download, convert or send the song. Try again later.' }, { quoted: message });
+        console.error('Play command FULL error:', {
+            message: err.message,
+            stack: err.stack?.substring(0, 300),
+            code: err.code,
+            response: err.response ? { status: err.response.status, data: err.response.data } : null
+        });
+        await sock.sendMessage(chatId, { 
+            text: `❌ Failed: ${err.message || 'Unknown issue'}\nTry another song or check later.` 
+        }, { quoted: message });
         await sock.sendMessage(chatId, { react: { text: "❌", key: message.key } });
     }
 }
 
-module.exports = playCommand;
+module.exports = songCommand; 
