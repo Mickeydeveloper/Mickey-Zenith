@@ -110,16 +110,21 @@ async function playCommand(sock, chatId, message) {
             throw new Error("No download link received from Yupra API");
         }
 
+        // Download audio as Buffer (key fix for compatibility)
+        await sock.sendMessage(chatId, { react: { text: "📥", key: message.key } });
+        const audioResponse = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 90000 });
+        const audioBuffer = Buffer.from(audioResponse.data);
+
         // Sending reaction
         await sock.sendMessage(chatId, { react: { text: "🎵", key: message.key } });
 
-        // Send audio – FIXED VERSION
+        // Send audio – FIXED with Buffer + audio/mp4
         await sock.sendMessage(chatId, {
-            audio: { url: audioUrl },
-            mimetype: 'audio/mp4',                    // Key fix: most compatible in 2025–2026
-            fileName: `${title.replace(/[^\w\s-]/g, '')}.m4a`,  // .m4a instead of .mp3
+            audio: audioBuffer,                        // ← Buffer instead of URL
+            mimetype: 'audio/mp4',                     // Most compatible for music-style audio
+            fileName: `${title.replace(/[^\w\s-]/g, '')}.m4a`,
             ptt: false,
-            waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0]  // optional, but nice
+            waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0]
         }, { quoted: message });
 
         // Success
