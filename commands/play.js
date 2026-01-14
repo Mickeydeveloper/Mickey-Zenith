@@ -23,20 +23,15 @@ async function tryRequest(getter, attempts = 3) {
 	throw lastError;
 }
 
-async function getIzumiAudioByUrl(youtubeUrl) {
-	const apiUrl = `https://api.vreden.my.id/api/v1/download/play/music?query=${encodeURIComponent(youtubeUrl)}`;
+async function getAudioByUrl(youtubeUrl) {
+	// Single-source audio fetch using Okatsu endpoint (reliable single API)
+	const apiUrl = `https://api.vreden.my.id/api/v1/download/play/audio?query=${encodeURIComponent(youtubeUrl)}`;
 	const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-	if (res?.data?.result?.download) return res.data.result;
-	throw new Error('Izumi audio api returned no download');
-}
-
-async function getOkatsuAudioByUrl(youtubeUrl) {
-	const apiUrl = `https://api.vreden.my.id/api/v1/download/youtube/audio?url=${encodeURIComponent(youtubeUrl)}`;
-	const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+	// Support multiple response shapes returned by the API
 	if (res?.data?.result?.mp3) return { download: res.data.result.mp3, title: res.data.result.title };
-	// some variants return url directly
-	if (res?.data?.url) return { download: res.data.url, title: res.data.title };
-	throw new Error('Okatsu ytmp3 returned no mp3');
+	if (res?.data?.url) return { download: res.data.url, title: res.data.title || '' };
+	if (res?.data?.result?.download) return res.data.result;
+	throw new Error('Audio API returned no download');
 }
 
 async function playCommand(sock, chatId, message) {
@@ -83,19 +78,35 @@ async function playCommand(sock, chatId, message) {
 
 		let audioData;
 		try {
-			audioData = await getIzumiAudioByUrl(input);
-		} catch (e1) {
-			try {
-				audioData = await getOkatsuAudioByUrl(input);
-			} catch (e2) {
-				throw new Error(e1.message + ' | ' + e2.message);
-			}
+			audioData = await getAudioByUrl(input);
+		} catch (e) {
+			throw new Error('Audio API failed: ' + (e?.message || e));
 		}
 
 		const fileName = (audioData.title || title || 'audio').replace(/[\\/:*?"<>|]/g, '').trim() + '.mp3';
 
+		// Download the audio directly from the API and send as binary
+		const downloadUrl = audioData.download;
+		let audioBuffer;
+		try {
+			const res = await tryRequest(() => axios.get(downloadUrl, { ...AXIOS_DEFAULTS, responseType: 'arraybuffer', timeout: 120000 }));
+			const contentLength = parseInt(res.headers?.['content-length'] || 0, 10);
+			const MAX_BYTES = 25 * 1024 * 1024; // 25 MB safety limit
+			if (contentLength && contentLength > MAX_BYTES) {
+				await sock.sendMessage(chatId, { text: `File is too large to upload (${(contentLength / (1024*1024)).toFixed(2)} MB). Sending a download link instead:\n${downloadUrl}` }, { quoted: message });
+				return;
+			}
+			audioBuffer = Buffer.from(res.data);
+		} catch (e) {
+			console.error('[PLAY] download error:', e?.message || e);
+			// Fallback: send the direct URL if buffer download fails
+			await sock.sendMessage(chatId, { text: 'Failed to download audio file directly, sending link instead.' }, { quoted: message });
+			await sock.sendMessage(chatId, { text: downloadUrl }, { quoted: message });
+			return;
+		}
+
 		await sock.sendMessage(chatId, {
-			audio: { url: audioData.download },
+			audio: audioBuffer,
 			mimetype: 'audio/mpeg',
 			fileName
 		}, { quoted: message });
