@@ -1,11 +1,6 @@
 const axios = require('axios');
 const yts = require('yt-search');
 const { getBuffer } = require("../lib/myfunc");
-const ffmpeg = require('fluent-ffmpeg');
-const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
-const { Readable } = require('stream');
-
-ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const AXIOS_DEFAULTS = {
     timeout: 60000,
@@ -15,54 +10,44 @@ const AXIOS_DEFAULTS = {
     }
 };
 
-async function tryRequest(getter, attempts = 4) {  // increased attempts
+async function tryRequest(getter, attempts = 3) {
     let lastError;
     for (let attempt = 1; attempt <= attempts; attempt++) {
         try {
             return await getter();
         } catch (err) {
             lastError = err;
-            if (attempt < attempts) await new Promise(r => setTimeout(r, 1500 * attempt));
+            if (attempt < attempts) await new Promise(r => setTimeout(r, 1000 * attempt));
         }
     }
     throw lastError;
 }
 
-async function getYupraDownload(youtubeUrl) {
-    if (!youtubeUrl || !youtubeUrl.includes('youtu')) {
-        throw new Error('Invalid YouTube URL');
-    }
-
-    const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
+async function getIzumiDownloadByUrl(youtubeUrl) {
+    const apiUrl = `https://izumiiiiiiii.dpdns.org/downloader/youtube?url=${encodeURIComponent(youtubeUrl)}&format=mp3`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-
-    if (res?.data?.success && res?.data?.data?.download_url) {
-        return {
-            download: res.data.data.download_url,
-            title: res.data.data.title || 'Unknown Song',
-            thumbnail: res.data.data.thumbnail || null
-        };
-    }
-
-    throw new Error(res?.data?.message || 'No valid download link from API');
+    if (res?.data?.result?.download) return res.data.result;
+    throw new Error('Izumi youtube?url returned no download');
 }
 
-async function convertToOpus(buffer) {
-    return new Promise((resolve, reject) => {
-        const chunks = [];
-        const inputStream = Readable.from(buffer);
+async function getIzumiDownloadByQuery(query) {
+    const apiUrl = `https://izumiiiiiiii.dpdns.org/downloader/youtube-play?query=${encodeURIComponent(query)}`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.result?.download) return res.data.result;
+    throw new Error('Izumi youtube-play returned no download');
+}
 
-        ffmpeg(inputStream)
-            .audioCodec('libopus')
-            .audioChannels(1)
-            .audioFrequency(48000)
-            .audioBitrate(64)
-            .format('ogg')
-            .on('error', (err) => reject(new Error(`FFmpeg: ${err.message}`)))
-            .on('data', (chunk) => chunks.push(chunk))
-            .on('end', () => resolve(Buffer.concat(chunks)))
-            .pipe();
-    });
+async function getOkatsuDownloadByUrl(youtubeUrl) {
+    const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    if (res?.data?.dl) {
+        return {
+            download: res.data.dl,
+            title: res.data.title || 'Unknown Song',
+            thumbnail: res.data.thumb
+        };
+    }
+    throw new Error('Okatsu ytmp3 returned no download');
 }
 
 async function playCommand(sock, chatId, message) {
@@ -71,35 +56,41 @@ async function playCommand(sock, chatId, message) {
         const queryText = text.split(' ').slice(1).join(' ').trim();
 
         if (!queryText) {
-            await sock.sendMessage(chatId, { text: '⚠️ Usage: .play <song name or link>' }, { quoted: message });
+            await sock.sendMessage(chatId, { text: '⚠️ Usage: .play <song name or YouTube link>' }, { quoted: message });
             return;
         }
 
-        await sock.sendMessage(chatId, { react: { text: "🔍", key: message.key } });
+        // Immediate reaction when command is used
+        await sock.sendMessage(chatId, {
+            react: { text: "🔍", key: message.key }
+        });
 
         let video;
         if (queryText.includes('youtube.com') || queryText.includes('youtu.be')) {
             video = { url: queryText, title: 'YouTube Video', timestamp: 'Loading...' };
         } else {
-            await sock.sendMessage(chatId, { react: { text: "🔎", key: message.key } });
+            await sock.sendMessage(chatId, { react: { text: "🔎", key: message.key } }); // Searching
             const search = await yts(queryText);
-            if (!search?.videos?.length) {
-                await sock.sendMessage(chatId, { text: '❌ No results found.' }, { quoted: message });
+            if (!search || !search.videos.length) {
+                await sock.sendMessage(chatId, { text: '❌ No results found for your query.' }, { quoted: message });
                 await sock.sendMessage(chatId, { react: { text: "❌", key: message.key } });
                 return;
             }
             video = search.videos[0];
         }
 
+        // Update reaction to downloading
         await sock.sendMessage(chatId, { react: { text: "⬇️", key: message.key } });
 
+        // Get thumbnail buffer
         let thumbnailBuffer;
         try {
             thumbnailBuffer = await getBuffer(video.thumbnail || "https://water-billimg.onrender.com/1761205727440.png");
-        } catch {
-            thumbnailBuffer = await getBuffer("https://water-billimg.onrender.com/1761205727440.png");
+        } catch (e) {
+            thumbnailBuffer = await getBuffer("https://water-billimg.onrender.com/1761205727440.png"); // fallback
         }
 
+        // Send beautiful ad preview with song info (this is the only ad now)
         await sock.sendMessage(chatId, {
             text: "🎶 *Fetching your song...*",
             contextInfo: {
@@ -114,60 +105,47 @@ async function playCommand(sock, chatId, message) {
             }
         }, { quoted: message });
 
-        const audioData = await getYupraDownload(video.url);
-        const audioUrl = audioData.download;
-        const title = audioData.title || video.title || 'song';
-
-        if (!audioUrl) throw new Error("No download link");
-
-        // Quick check if link is alive
+        // Get download link with fallbacks
+        let audioData;
         try {
-            await axios.head(audioUrl, { timeout: 10000 });
-        } catch (e) {
-            throw new Error(`Download link invalid/expired (${e.message})`);
+            audioData = await getIzumiDownloadByUrl(video.url);
+        } catch (e1) {
+            try {
+                audioData = await getIzumiDownloadByQuery(video.title || queryText);
+            } catch (e2) {
+                audioData = await getOkatsuDownloadByUrl(video.url);
+            }
         }
 
-        await sock.sendMessage(chatId, { react: { text: "📥", key: message.key } });
+        const audioUrl = audioData.download || audioData.dl || audioData.url;
+        const title = audioData.title || video.title || 'song';
 
-        // Improved download
-        const audioResponse = await tryRequest(() => axios.get(audioUrl, {
-            responseType: 'arraybuffer',
-            timeout: 120000,
-            headers: { 
-                'User-Agent': AXIOS_DEFAULTS.headers['User-Agent'],
-                'Referer': 'https://youtube.com/'
-            }
-        }));
+        if (!audioUrl) {
+            throw new Error("No download link received from any API");
+        }
 
-        const audioBuffer = Buffer.from(audioResponse.data);
-
-        await sock.sendMessage(chatId, { react: { text: "🔄", key: message.key } });
-        const opusBuffer = await convertToOpus(audioBuffer);
-
+        // Update reaction to sending
         await sock.sendMessage(chatId, { react: { text: "🎵", key: message.key } });
 
+        // Send the audio
         await sock.sendMessage(chatId, {
-            audio: opusBuffer,
-            mimetype: 'audio/ogg; codecs=opus',
-            ptt: true,
-            fileName: `${title.replace(/[^\w\s-]/g, '')}.ogg`,
-            waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0, 30, 50, 70, 90]
+            audio: { url: audioUrl },
+            mimetype: 'audio/mpeg',
+            fileName: `${title.replace(/[^\w\s-]/g, '')}.mp3`,
+            ptt: false,
+            waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0] // Optional: visual waveform
         }, { quoted: message });
 
+        // Final success reaction (no extra "Enjoy" message or second ad)
         await sock.sendMessage(chatId, { react: { text: "✅", key: message.key } });
 
     } catch (err) {
-        console.error('Play command FULL error:', {
-            message: err.message,
-            stack: err.stack?.substring(0, 300),
-            code: err.code,
-            response: err.response ? { status: err.response.status, data: err.response.data } : null
+        console.error('Play command error:', err);
+        await sock.sendMessage(chatId, { text: '❌ Failed to download or send the song. Please try again later.' }, { quoted: message });
+        await sock.sendMessage(chatId, {
+            react: { text: "❌", key: message.key }
         });
-        await sock.sendMessage(chatId, { 
-            text: `❌ Failed: ${err.message || 'Unknown issue'}\nTry another song or check later.` 
-        }, { quoted: message });
-        await sock.sendMessage(chatId, { react: { text: "❌", key: message.key } });
     }
 }
 
-module.exports = songCommand; 
+module.exports = playCommand;
