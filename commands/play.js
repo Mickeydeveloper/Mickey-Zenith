@@ -23,19 +23,7 @@ async function tryRequest(getter, attempts = 3) {
     throw lastError;
 }
 
-async function getIzumiDownloadByUrl(youtubeUrl) {
-    const apiUrl = `https://izumiiiiiiii.dpdns.org/downloader/youtube?url=${encodeURIComponent(youtubeUrl)}&format=mp3`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-    if (res?.data?.result?.download) return res.data.result;
-    throw new Error('Izumi youtube?url returned no download');
-}
-
-async function getIzumiDownloadByQuery(query) {
-    const apiUrl = `https://izumiiiiiiii.dpdns.org/downloader/youtube-play?query=${encodeURIComponent(query)}`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-    if (res?.data?.result?.download) return res.data.result;
-    throw new Error('Izumi youtube-play returned no download');
-}
+// NOTE: Izumi endpoints removed — using Yupra (Okatsu) API only as primary downloader. If needed later, reintroduce a well-maintained secondary API here.
 
 async function getOkatsuDownloadByUrl(youtubeUrl) {
     const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
@@ -59,7 +47,6 @@ async function getOkatsuDownloadByUrl(youtubeUrl) {
 
 // Last-resort: try to download the audio directly using ytdl-core
 const ytdl = require('ytdl-core');
-const { PassThrough } = require('stream');
 
 async function getYtdlAudioBuffer(youtubeUrl, maxBytes = 16 * 1024 * 1024) {
     if (!ytdl.validateURL(youtubeUrl)) throw new Error('Invalid YouTube URL');
@@ -146,35 +133,23 @@ async function playCommand(sock, chatId, message) {
             }
         }, { quoted: message });
 
-        // Get download link with fallbacks and a direct fallback (ytdl) if APIs are down
+        // Try Yupra (Okatsu) API first, then fall back to direct ytdl download if it fails
         let audioData;
         const attempts = [];
         try {
-            audioData = await getIzumiDownloadByUrl(video.url);
-            attempts.push('izumi-url');
+            audioData = await getOkatsuDownloadByUrl(video.url);
+            attempts.push('okatsu');
         } catch (e1) {
-            attempts.push(`izumi-url:${e1?.message || e1}`);
+            attempts.push(`okatsu:${e1?.message || e1}`);
+            // Notify user that Yupra failed and we'll attempt a direct download
+            await sock.sendMessage(chatId, { text: '⚠️ Yupra API failed. Trying a direct download — this may take longer and can be size-limited.' }, { quoted: message });
             try {
-                audioData = await getIzumiDownloadByQuery(video.title || queryText);
-                attempts.push('izumi-query');
+                const ytdlData = await getYtdlAudioBuffer(video.url);
+                audioData = { buffer: ytdlData.buffer, title: ytdlData.title || video.title, mime: ytdlData.mime };
+                attempts.push('ytdl-direct');
             } catch (e2) {
-                attempts.push(`izumi-query:${e2?.message || e2}`);
-                try {
-                    audioData = await getOkatsuDownloadByUrl(video.url);
-                    attempts.push('okatsu');
-                } catch (e3) {
-                    attempts.push(`okatsu:${e3?.message || e3}`);
-                    // Notify user that we'll attempt a direct download
-                    await sock.sendMessage(chatId, { text: '⚠️ All external download APIs failed. Trying a direct download — this may take longer and can be size-limited.' }, { quoted: message });
-                    try {
-                        const ytdlData = await getYtdlAudioBuffer(video.url);
-                        audioData = { buffer: ytdlData.buffer, title: ytdlData.title || video.title, mime: ytdlData.mime };
-                        attempts.push('ytdl-direct');
-                    } catch (e4) {
-                        attempts.push(`ytdl:${e4?.message || e4}`);
-                        throw new Error(`No download available. Attempts: ${attempts.join(' | ')}`);
-                    }
-                }
+                attempts.push(`ytdl:${e2?.message || e2}`);
+                throw new Error(`No download available. Attempts: ${attempts.join(' | ')}`);
             }
         }
 
@@ -183,8 +158,8 @@ async function playCommand(sock, chatId, message) {
         const title = audioData.title || video.title || 'song';
         const mimetype = audioData.mimetype || audioData.mime || 'audio/mpeg';
 
-        if (!audioUrl) {
-            throw new Error("No download link received from any API");
+        if (!audioUrl && !audioBuffer) {
+            throw new Error("No download link received from any source");
         }
 
         // Update reaction to sending
