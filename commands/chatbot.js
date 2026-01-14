@@ -5,9 +5,6 @@ const isAdmin = require('../lib/isAdmin');
 
 const STATE_PATH = path.join(__dirname, '..', 'data', 'chatbot.json');
 
-// ← Replace with your REAL API key
-const API_KEY = "your_api_key_here";   // ← change this!
-
 function loadState() {
   try {
     if (!fs.existsSync(STATE_PATH)) return { perGroup: {}, private: false };
@@ -91,7 +88,7 @@ async function handleChatbotMessage(sock, chatId, message) {
 
     // ──── Only user message is sent ────
     const encoded = encodeURIComponent(userText);
-    const apiUrl = `https://apis.davidcyriltech.my.id/ai/chatbot?query=\( {encoded}&apikey= \){API_KEY}`;
+    const apiUrl = `https://api.yupra.my.id/api/ai/gpt5?text=${encoded}`;
 
     let apiResult = null;
 
