@@ -1,6 +1,11 @@
 const axios = require('axios');
 const yts = require('yt-search');
 const { getBuffer } = require("../lib/myfunc");
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+const { Readable } = require('stream');
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path); // Auto-set ffmpeg path
 
 const AXIOS_DEFAULTS = {
     timeout: 60000,
@@ -45,6 +50,24 @@ async function getYupraDownload(youtubeUrl) {
     );
 }
 
+async function convertToOpus(buffer) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        const inputStream = Readable.from(buffer);
+
+        ffmpeg(inputStream)
+            .audioCodec('libopus')
+            .audioChannels(1)          // Mono (WhatsApp voice notes require mono)
+            .audioFrequency(48000)     // Standard for Opus in WhatsApp
+            .audioBitrate(64)          // Good quality + small size
+            .format('ogg')
+            .on('error', (err) => reject(new Error(`FFmpeg error: ${err.message}`)))
+            .on('data', (chunk) => chunks.push(chunk))
+            .on('end', () => resolve(Buffer.concat(chunks)))
+            .pipe();
+    });
+}
+
 async function playCommand(sock, chatId, message) {
     try {
         const text = message.message?.conversation || message.message?.extendedTextMessage?.text || '';
@@ -55,16 +78,13 @@ async function playCommand(sock, chatId, message) {
             return;
         }
 
-        // Immediate reaction
-        await sock.sendMessage(chatId, {
-            react: { text: "🔍", key: message.key }
-        });
+        await sock.sendMessage(chatId, { react: { text: "🔍", key: message.key } });
 
         let video;
         if (queryText.includes('youtube.com') || queryText.includes('youtu.be')) {
             video = { url: queryText, title: 'YouTube Video', timestamp: 'Loading...' };
         } else {
-            await sock.sendMessage(chatId, { react: { text: "🔎", key: message.key } }); // Searching
+            await sock.sendMessage(chatId, { react: { text: "🔎", key: message.key } });
             const search = await yts(queryText);
             if (!search || !search.videos.length) {
                 await sock.sendMessage(chatId, { text: '❌ No results found for your query.' }, { quoted: message });
@@ -74,10 +94,8 @@ async function playCommand(sock, chatId, message) {
             video = search.videos[0];
         }
 
-        // Downloading reaction
         await sock.sendMessage(chatId, { react: { text: "⬇️", key: message.key } });
 
-        // Thumbnail
         let thumbnailBuffer;
         try {
             thumbnailBuffer = await getBuffer(video.thumbnail || "https://water-billimg.onrender.com/1761205727440.png");
@@ -85,7 +103,6 @@ async function playCommand(sock, chatId, message) {
             thumbnailBuffer = await getBuffer("https://water-billimg.onrender.com/1761205727440.png");
         }
 
-        // Preview message
         await sock.sendMessage(chatId, {
             text: "🎶 *Fetching your song...*",
             contextInfo: {
@@ -100,9 +117,7 @@ async function playCommand(sock, chatId, message) {
             }
         }, { quoted: message });
 
-        // Fetch download from Yupra
         const audioData = await getYupraDownload(video.url);
-
         const audioUrl = audioData.download;
         const title = audioData.title || video.title || 'song';
 
@@ -110,29 +125,32 @@ async function playCommand(sock, chatId, message) {
             throw new Error("No download link received from Yupra API");
         }
 
-        // Download audio as Buffer (key fix for compatibility)
         await sock.sendMessage(chatId, { react: { text: "📥", key: message.key } });
-        const audioResponse = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 90000 });
-        const audioBuffer = Buffer.from(audioResponse.data);
 
-        // Sending reaction
+        // Download original audio
+        const audioResponse = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 90000 });
+        const mp3Buffer = Buffer.from(audioResponse.data);
+
+        // Convert to Opus/OGG
+        await sock.sendMessage(chatId, { react: { text: "🔄", key: message.key } });
+        const opusBuffer = await convertToOpus(mp3Buffer);
+
         await sock.sendMessage(chatId, { react: { text: "🎵", key: message.key } });
 
-        // Send audio – FIXED with Buffer + audio/mp4
+        // Send as voice note (ptt: true) – this fixes the error
         await sock.sendMessage(chatId, {
-            audio: audioBuffer,                        // ← Buffer instead of URL
-            mimetype: 'audio/mp4',                     // Most compatible for music-style audio
-            fileName: `${title.replace(/[^\w\s-]/g, '')}.m4a`,
-            ptt: false,
-            waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0]
+            audio: opusBuffer,
+            mimetype: 'audio/ogg; codecs=opus',
+            ptt: true,                                 // ← Key: makes it a voice note
+            fileName: `${title.replace(/[^\w\s-]/g, '')}.ogg`,
+            waveform: [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0, 30, 50, 70, 90] // Longer waveform looks better
         }, { quoted: message });
 
-        // Success
         await sock.sendMessage(chatId, { react: { text: "✅", key: message.key } });
 
     } catch (err) {
         console.error('Play command error:', err.message || err);
-        await sock.sendMessage(chatId, { text: '❌ Failed to download or send the song. Try again later.' }, { quoted: message });
+        await sock.sendMessage(chatId, { text: '❌ Failed to download, convert or send the song. Try again later.' }, { quoted: message });
         await sock.sendMessage(chatId, { react: { text: "❌", key: message.key } });
     }
 }
