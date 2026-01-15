@@ -200,25 +200,64 @@ async function songCommand(sock, chatId, message) {
                         }
                 }
 
-                // Send buffer as MP3 with thumbnail
+                // Send audio with improved thumbnail (externalAdReply) and faster streaming when possible
                 const thumbnailUrl = audioData.thumbnail || video.thumbnail;
-                
-                const messageContent = {
-                        audio: finalBuffer,
-                        mimetype: finalMimetype,
-                        fileName: `${(audioData.title || video.title || 'song')}.${finalExtension}`,
-                        ptt: false,
-                        caption: `🎵 *${audioData.title || video.title}*\n\n✨ Mickey Glitch Music Bot`
-                };
-                
-                if (thumbnailUrl) {
-                        messageContent.jpegThumbnail = await axios.get(thumbnailUrl, { 
-                                responseType: 'arraybuffer',
-                                timeout: 10000
-                        }).then(res => Buffer.from(res.data)).catch(() => null);
+
+                // Start fetching thumbnail concurrently (non-blocking) to reduce latency
+                const thumbnailPromise = thumbnailUrl ? axios.get(thumbnailUrl, { responseType: 'arraybuffer', timeout: 10000 }).then(res => Buffer.from(res.data)).catch(() => null) : Promise.resolve(null);
+
+                // If we have a direct MP3 URL, send by URL to avoid downloading the full file (faster)
+                if (finalExtension === 'mp3' && audioUrl) {
+                        const messageContent = {
+                                audio: { url: audioUrl },
+                                mimetype: finalMimetype,
+                                fileName: `${(audioData.title || video.title || 'song')}.${finalExtension}`,
+                                ptt: false,
+                                caption: `🎵 *${audioData.title || video.title}*\n\n✨ Mickey Glitch Music Bot`,
+                                contextInfo: {
+                                        externalAdReply: {
+                                                title: audioData.title || video.title || 'Mickey Glitch Music',
+                                                body: 'Mickey Glitch Music Bot',
+                                                thumbnailUrl: thumbnailUrl,
+                                                sourceUrl: audioUrl,
+                                                mediaType: 1,
+                                                showAdAttribution: false,
+                                                renderLargerThumbnail: true
+                                        }
+                                }
+                        };
+
+                        // Attach fetched jpegThumbnail if available (some clients prefer inline thumbnail)
+                        const jpegThumb = await thumbnailPromise;
+                        if (jpegThumb) messageContent.jpegThumbnail = jpegThumb;
+
+                        await sock.sendMessage(chatId, messageContent, { quoted: message });
+                } else {
+                        // Fallback: we have a buffer (converted or original non-mp3) - send as uploaded audio
+                        const messageContent = {
+                                audio: finalBuffer,
+                                mimetype: finalMimetype,
+                                fileName: `${(audioData.title || video.title || 'song')}.${finalExtension}`,
+                                ptt: false,
+                                caption: `🎵 *${audioData.title || video.title}*\n\n✨ Mickey Glitch Music Bot`,
+                                contextInfo: {
+                                        externalAdReply: {
+                                                title: audioData.title || video.title || 'Mickey Glitch Music',
+                                                body: 'Mickey Glitch Music Bot',
+                                                thumbnailUrl: thumbnailUrl,
+                                                sourceUrl: video.url || audioUrl || thumbnailUrl,
+                                                mediaType: 1,
+                                                showAdAttribution: false,
+                                                renderLargerThumbnail: true
+                                        }
+                                }
+                        };
+
+                        const jpegThumb = await thumbnailPromise;
+                        if (jpegThumb) messageContent.jpegThumbnail = jpegThumb;
+
+                        await sock.sendMessage(chatId, messageContent, { quoted: message });
                 }
-                
-                await sock.sendMessage(chatId, messageContent, { quoted: message });
 
                 // Cleanup: Delete temp files created during conversion
                 try {
