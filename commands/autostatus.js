@@ -5,11 +5,11 @@ const isOwnerOrSudo = require('../lib/isOwner');
 const CONFIG_PATH = path.join(__dirname, '../data/autoStatus.json');
 
 const DEFAULT_CONFIG = {
-    enabled: true,              // Always start ON
-    reactWith: '💚',            // Default reaction = green heart
+    enabled: true,
+    reactWith: '💚',
     forwardToOwner: true,
     forwardOnlyMedia: true,
-    ignoreOwnStatus: true       // Recommended: don't react to your own status
+    ignoreOwnStatus: true
 };
 
 let config = { ...DEFAULT_CONFIG };
@@ -25,7 +25,6 @@ function loadConfig() {
         }
     } catch (err) {
         console.error('AutoStatus config error:', err.message);
-        // Force default if file broken
         config = { ...DEFAULT_CONFIG };
     }
 }
@@ -40,7 +39,7 @@ function saveConfig() {
     }
 }
 
-loadConfig(); // Load on start (always starts enabled)
+loadConfig();
 
 // ────────────────────────────────────────────────
 
@@ -49,36 +48,39 @@ function getOwnerJid(sock) {
         require('../settings')?.ownerNumber ||
         process.env.OWNER_NUMBER ||
         process.env.OWNER ||
-        sock?.user?.id?.split(':')[0];
+        sock?.user?.id?.split(':')[0] ||
+        null;
 
     return owner ? `${owner}@s.whatsapp.net` : null;
 }
 
 // ────────────────────────────────────────────────
-// Very reliable reaction sender (2025-2026 style)
-async function reactToStatus(sock, key) {
+// Modern & safe reaction sender
+async function reactToStatus(sock, originalKey) {
     if (!config.enabled || !config.reactWith) return;
-    if (config.ignoreOwnStatus && key.fromMe) return;
+    if (!originalKey) return;
+
+    // Prevent reacting to own status if configured
+    if (config.ignoreOwnStatus && originalKey.fromMe) return;
 
     try {
-        await sock.relayMessage('status@broadcast', {
-            reactionMessage: {
-                key: {
-                    ...key,
-                    remoteJid: 'status@broadcast'
-                },
+        const reactionKey = {
+            remoteJid: 'status@broadcast',
+            fromMe: false,           // usually false for incoming statuses
+            id: originalKey.id,
+            participant: originalKey.participant || originalKey.remoteJid
+        };
+
+        await sock.sendMessage('status@broadcast', {
+            react: {
                 text: config.reactWith,
-                senderTimestampMs: Date.now(),
-                // Some newer versions require this field
-                reactionTimestampMs: Date.now()
+                key: reactionKey
             }
-        }, {
-            messageId: key.id || Date.now().toString()
         });
 
-        console.log(`[AutoStatus] Reacted ${config.reactWith} to status from ${key.participant || key.remoteJid}`);
+        console.log(`[AutoStatus] Reacted ${config.reactWith} to ${originalKey.participant || 'unknown'}`);
     } catch (err) {
-        console.log('[AutoStatus] Reaction failed:', err.message?.slice(0, 120));
+        console.error('[AutoStatus] Reaction failed:', err?.message || err);
     }
 }
 
@@ -104,8 +106,10 @@ const getStatusMenu = (ownerNum) => `
 `.trim();
 
 async function autoStatusCommand(sock, m, args = '') {
-    const chatId = m.key.remoteJid;
-    const sender = m.key.participant || m.key.remoteJid;
+    const chatId = m.key?.remoteJid;
+    if (!chatId) return;
+
+    const sender = m.key?.participant || chatId;
 
     if (!(await isOwnerOrSudo(sender, sock, chatId))) {
         return sock.sendMessage(chatId, { text: '⛔ Owner only!' }, { quoted: m });
@@ -130,7 +134,7 @@ async function autoStatusCommand(sock, m, args = '') {
         if (reactArg === 'off') {
             config.reactWith = null;
         } else if (reactArg) {
-            config.reactWith = reactArg.trim().slice(0, 4);
+            config.reactWith = reactArg.trim().slice(0, 4); // emoji usually ≤4 chars
         } else {
             config.reactWith = '💚';
         }
@@ -148,36 +152,55 @@ async function autoStatusCommand(sock, m, args = '') {
         }, { quoted: m });
     }
 
-    // Show menu by default
+    // Default: show menu
     const ownerNum = getOwnerJid(sock)?.split('@')[0] || '—';
     return sock.sendMessage(chatId, { text: getStatusMenu(ownerNum) }, { quoted: m });
 }
 
 // ────────────────────────────────────────────────
-// Main status handler - always reacts when enabled
-async function handleStatusUpdate(sock, status) {
+// Main status handler – much safer parsing
+async function handleStatusUpdate(sock, update) {
     try {
-        if (!status?.messages?.length && !status?.key) return;
+        // Bail out early if no useful data
+        if (!update || typeof update !== 'object') return;
 
-        const m = status.messages?.[0] || status;
-        const key = m.key;
+        let messageObj = null;
+        let key = null;
+
+        // Try different shapes Baileys uses for status updates
+        if (update.messages?.length > 0) {
+            messageObj = update.messages[0];
+        } else if (update.message) {
+            messageObj = update;
+        } else if (update.key) {
+            // Some events pass key directly
+            key = update.key;
+        }
+
+        if (messageObj?.key) {
+            key = messageObj.key;
+        }
+
+        if (!key?.remoteJid) return; // no valid key → skip
 
         if (key.remoteJid !== 'status@broadcast') return;
 
-        // Mark as read (helps avoid "viewed" issues sometimes)
+        // Optional: mark as read
         await sock.readMessages([key]).catch(() => {});
 
-        // Always try to react when module is enabled
+        // React!
         await reactToStatus(sock, key);
 
-        // Optional forwarding (your existing logic)
+        // Forward logic (add your forward code here when needed)
         if (config.enabled && config.forwardToOwner) {
-            // ... your forwardStatusToOwner() function here ...
-            // (keep your previous forwarding code)
+            // ... forwardToOwner(sock, messageObj, key) ...
+            // Example placeholder:
+            // const owner = getOwnerJid(sock);
+            // if (owner) await sock.forwardMessage(owner, messageObj);
         }
 
     } catch (err) {
-        console.error('[AutoStatus] Main handler error:', err.message);
+        console.error('[AutoStatus] Handler error:', err?.message || err);
     }
 }
 
