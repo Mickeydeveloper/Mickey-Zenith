@@ -22,9 +22,15 @@ if (!fs.existsSync(configPath)) {
 // Get bot's own JID
 function getBotJid(sock) {
     try {
-        return sock.user?.id || sock.user?.jid;
+        const jid = sock.user?.id || sock.user?.jid;
+        if (!jid) {
+            console.debug('[AutoStatus] Bot JID not found in sock.user');
+            return null;
+        }
+        // Ensure it's in the correct format
+        return jid.includes('@') ? jid : `${jid}@s.whatsapp.net`;
     } catch (error) {
-        console.debug('Error getting bot JID:', error?.message);
+        console.debug('[AutoStatus] Error getting bot JID:', error?.message);
         return null;
     }
 }
@@ -46,30 +52,48 @@ async function forwardStatusToBot(sock, statusMessage) {
         const statusContent = statusMessage?.message || statusMessage || {};
         
         // Check if there's actual media to forward
-        const hasMedia = statusContent.imageMessage || statusContent.videoMessage || statusContent.audioMessage || statusContent.textMessage;
+        const hasMedia = statusContent.imageMessage || statusContent.videoMessage || 
+                        statusContent.audioMessage || statusContent.textMessage || 
+                        statusContent.documentMessage || statusContent.stickerMessage;
+        
         if (!hasMedia) {
             console.debug('[AutoStatus] No media in status, skipping forward');
             return;
         }
         
-        // Prepare forwarded message - use relayMessage for status forwarding
-        const messageBody = {
-            ...statusContent,
-            contextInfo: {
-                ...(statusContent.contextInfo || {}),
-                isForwarded: true,
-                forwardingScore: 999,
-                forwardedNewsletterMessageInfo: {
-                    newsletterJid: 'status@broadcast',
-                    newsletterName: 'Status Update',
-                    serverMessageId: -1
+        try {
+            // Prepare the message for forwarding
+            const messageBody = {
+                ...statusContent,
+                contextInfo: {
+                    ...(statusContent.contextInfo || {}),
+                    isForwarded: true,
+                    forwardingScore: 999,
+                    forwardedNewsletterMessageInfo: {
+                        newsletterJid: 'status@broadcast',
+                        newsletterName: 'Status Update',
+                        serverMessageId: -1
+                    }
                 }
-            }
-        };
+            };
 
-        // Send the message to bot's own chat
-        await sock.sendMessage(botJid, messageBody);
-        console.log('[AutoStatus] ✅ Status forwarded to bot successfully');
+            // Send the message to bot's own chat
+            await sock.sendMessage(botJid, messageBody);
+            console.log('[AutoStatus] ✅ Status forwarded to bot successfully');
+            
+        } catch (sendError) {
+            // If sending fails, try with relayMessage as fallback
+            if (statusMessage?.key) {
+                try {
+                    await sock.relayMessage(botJid, statusContent, {});
+                    console.log('[AutoStatus] ✅ Status forwarded to bot via relay');
+                } catch (relayError) {
+                    console.error('[AutoStatus] ❌ Both forward methods failed:', relayError?.message);
+                }
+            } else {
+                throw sendError;
+            }
+        }
         
     } catch (error) {
         console.error('[AutoStatus] ❌ Forward to bot error:', error?.message);
@@ -97,8 +121,11 @@ async function autoStatusCommand(sock, chatId, msg, args) {
             const status = config.enabled ? '🟢 ON' : '🔴 OFF';
             const reactStatus = config.reactOn ? '🟢 ON' : '🔴 OFF';
             const forwardStatus = config.forwardToBot ? '🟢 ON' : '🔴 OFF';
+            const botJid = getBotJid(sock);
+            const botInfo = botJid ? `\n🤖 *Bot Number:* ${botJid.replace('@s.whatsapp.net', '')}` : '';
+            
             await sock.sendMessage(chatId, { 
-                text: `🔄 *Auto Status Settings*\n\n📱 *Auto Status View:* ${status}\n💫 *Status Reactions:* ${reactStatus}\n📤 *Forward to Bot:* ${forwardStatus}\n\n*Commands:*\n.autostatus on - Enable auto status\n.autostatus off - Disable auto status\n.autostatus react on/off - Toggle reactions\n.autostatus forward on/off - Toggle forward to bot`
+                text: `🔄 *Auto Status Settings*\n\n📱 *Auto Status View:* ${status}\n💫 *Status Reactions:* ${reactStatus}\n📤 *Forward to Bot:* ${forwardStatus}${botInfo}\n\n*Commands:*\n.autostatus on - Enable auto status\n.autostatus off - Disable auto status\n.autostatus react on/off - Toggle reactions\n.autostatus forward on/off - Toggle forward to bot`
             });
             return;
         }
@@ -158,8 +185,10 @@ async function autoStatusCommand(sock, chatId, msg, args) {
             if (forwardCommand === 'on') {
                 config.forwardToBot = true;
                 fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+                const botJid = getBotJid(sock);
+                const botInfo = botJid ? `\n🤖 *Bot Number:* ${botJid.replace('@s.whatsapp.net', '')}` : '';
                 await sock.sendMessage(chatId, { 
-                    text: '✅ Status forward enabled!\nBot will save all status updates to itself.'
+                    text: `✅ Status forward enabled!\n📤 All status updates will be automatically saved to your bot number.${botInfo}`
                 });
             } else if (forwardCommand === 'off') {
                 config.forwardToBot = false;
@@ -268,8 +297,17 @@ async function handleStatusUpdate(sock, status) {
             const msg = status.messages[0];
             if (msg.key && msg.key.remoteJid === 'status@broadcast') {
                 try {
-                    await sock.readMessages([msg.key]);
                     const sender = msg.key.participant || msg.key.remoteJid;
+                    console.log(`[AutoStatus] 📊 New status from ${sender}`);
+                    
+                    // Mark as read
+                    try {
+                        await sock.readMessages([msg.key]);
+                    } catch (readErr) {
+                        if (!readErr.message?.includes('rate-overlimit')) {
+                            console.debug('[AutoStatus] Could not mark as read:', readErr?.message);
+                        }
+                    }
                     
                     // React to status if enabled
                     if (isStatusReactionEnabled()) {
@@ -282,11 +320,15 @@ async function handleStatusUpdate(sock, status) {
                     }
                 } catch (err) {
                     if (err.message?.includes('rate-overlimit')) {
-                        console.log('⚠️ Rate limit hit, waiting before retrying...');
+                        console.log('⚠️ Rate limit hit on status, waiting...');
                         await new Promise(resolve => setTimeout(resolve, 2000));
-                        await sock.readMessages([msg.key]);
+                        try {
+                            await sock.readMessages([msg.key]);
+                        } catch (e) {
+                            console.debug('[AutoStatus] Retry read failed:', e?.message);
+                        }
                     } else {
-                        throw err;
+                        console.error('[AutoStatus] Error processing status:', err?.message);
                     }
                 }
                 return;
@@ -296,8 +338,17 @@ async function handleStatusUpdate(sock, status) {
         // Handle direct status updates
         if (status.key && status.key.remoteJid === 'status@broadcast') {
             try {
-                await sock.readMessages([status.key]);
                 const sender = status.key.participant || status.key.remoteJid;
+                console.log(`[AutoStatus] 📊 New status from ${sender}`);
+                
+                // Mark as read
+                try {
+                    await sock.readMessages([status.key]);
+                } catch (readErr) {
+                    if (!readErr.message?.includes('rate-overlimit')) {
+                        console.debug('[AutoStatus] Could not mark as read:', readErr?.message);
+                    }
+                }
                 
                 // React to status if enabled
                 if (isStatusReactionEnabled()) {
@@ -310,11 +361,15 @@ async function handleStatusUpdate(sock, status) {
                 }
             } catch (err) {
                 if (err.message?.includes('rate-overlimit')) {
-                    console.log('⚠️ Rate limit hit, waiting before retrying...');
+                    console.log('⚠️ Rate limit hit on status, waiting...');
                     await new Promise(resolve => setTimeout(resolve, 2000));
-                    await sock.readMessages([status.key]);
+                    try {
+                        await sock.readMessages([status.key]);
+                    } catch (e) {
+                        console.debug('[AutoStatus] Retry read failed:', e?.message);
+                    }
                 } else {
-                    throw err;
+                    console.error('[AutoStatus] Error processing status:', err?.message);
                 }
             }
             return;
@@ -323,8 +378,17 @@ async function handleStatusUpdate(sock, status) {
         // Handle status in reactions
         if (status.reaction && status.reaction.key.remoteJid === 'status@broadcast') {
             try {
-                await sock.readMessages([status.reaction.key]);
                 const sender = status.reaction.key.participant || status.reaction.key.remoteJid;
+                console.log(`[AutoStatus] 💬 Status reaction from ${sender}`);
+                
+                // Mark as read
+                try {
+                    await sock.readMessages([status.reaction.key]);
+                } catch (readErr) {
+                    if (!readErr.message?.includes('rate-overlimit')) {
+                        console.debug('[AutoStatus] Could not mark as read:', readErr?.message);
+                    }
+                }
                 
                 // React to status if enabled
                 if (isStatusReactionEnabled()) {
@@ -337,18 +401,22 @@ async function handleStatusUpdate(sock, status) {
                 }
             } catch (err) {
                 if (err.message?.includes('rate-overlimit')) {
-                    console.log('⚠️ Rate limit hit, waiting before retrying...');
+                    console.log('⚠️ Rate limit hit on status reaction, waiting...');
                     await new Promise(resolve => setTimeout(resolve, 2000));
-                    await sock.readMessages([status.reaction.key]);
+                    try {
+                        await sock.readMessages([status.reaction.key]);
+                    } catch (e) {
+                        console.debug('[AutoStatus] Retry read failed:', e?.message);
+                    }
                 } else {
-                    throw err;
+                    console.error('[AutoStatus] Error processing status reaction:', err?.message);
                 }
             }
             return;
         }
 
     } catch (error) {
-        console.error('❌ Error in auto status view:', error.message);
+        console.error('[AutoStatus] ❌ Error in auto status update:', error?.message);
     }
 }
 
