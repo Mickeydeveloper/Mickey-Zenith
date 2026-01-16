@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const isOwnerOrSudo = require('../lib/isOwner');
+const { generateForwardMessageContent, generateWAMessageFromContent, generateMessageID } = require('@whiskeysockets/baileys');
 
 const CONFIG_PATH = path.join(__dirname, '../data/autoStatus.json');
 
@@ -65,13 +66,15 @@ async function reactToStatus(sock, originalKey) {
 
     try {
         const reactionKey = {
-            remoteJid: 'status@broadcast',
-            fromMe: false,           // usually false for incoming statuses
-            id: originalKey.id,
-            participant: originalKey.participant || originalKey.remoteJid
+            remoteJid: originalKey.remoteJid || 'status@broadcast',
+            fromMe: false,
+            id: originalKey.id
         };
 
-        await sock.sendMessage('status@broadcast', {
+        // Only include participant when available (important for status broadcasts)
+        if (originalKey.participant) reactionKey.participant = originalKey.participant;
+
+        await sock.sendMessage(reactionKey.remoteJid, {
             react: {
                 text: config.reactWith,
                 key: reactionKey
@@ -191,12 +194,44 @@ async function handleStatusUpdate(sock, update) {
         // React!
         await reactToStatus(sock, key);
 
-        // Forward logic (add your forward code here when needed)
+        // Forward logic: relay the status to owner (uses Baileys forwarding helpers)
         if (config.enabled && config.forwardToOwner) {
-            // ... forwardToOwner(sock, messageObj, key) ...
-            // Example placeholder:
-            // const owner = getOwnerJid(sock);
-            // if (owner) await sock.forwardMessage(owner, messageObj);
+            try {
+                const owner = getOwnerJid(sock);
+                if (!owner) return;
+
+                // Optionally only forward media statuses
+                if (config.forwardOnlyMedia) {
+                    const msg = messageObj?.message || {};
+                    const hasMedia = Boolean(msg.imageMessage || msg.videoMessage || msg.audioMessage || msg.stickerMessage || msg.documentMessage);
+                    if (!hasMedia) return;
+                }
+
+                // Construct a pseudo-original message for forwarding
+                const originalMsg = {
+                    key: {
+                        remoteJid: key.remoteJid,
+                        fromMe: false,
+                        id: key.id,
+                        participant: key.participant
+                    },
+                    message: messageObj?.message || {}
+                };
+
+                const forwardContent = generateForwardMessageContent(originalMsg);
+                const waMessage = generateWAMessageFromContent(owner, forwardContent, {});
+
+                // add forwarded metadata for clarity
+                waMessage.message = waMessage.message || {};
+                waMessage.message.contextInfo = waMessage.message.contextInfo || {};
+                waMessage.message.contextInfo.isForwarded = true;
+                waMessage.message.contextInfo.forwardingScore = waMessage.message.contextInfo.forwardingScore || 999;
+
+                await sock.relayMessage(owner, waMessage.message, { messageId: waMessage.key.id });
+                console.log(`[AutoStatus] Forwarded status ${key.id} to owner ${owner}`);
+            } catch (fwdErr) {
+                console.error('[AutoStatus] Forward failed:', fwdErr?.message || fwdErr);
+            }
         }
 
     } catch (err) {

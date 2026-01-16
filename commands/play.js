@@ -74,11 +74,22 @@ async function songCommand(sock, chatId, message) {
                         video = search.videos[0];
         }
 
-        // Inform user
-        await sock.sendMessage(chatId, {
-            image: { url: video.thumbnail },
-            caption: `🎵 Downloading: *${video.title}*\n⏱ Duration: ${video.timestamp}`
-        }, { quoted: message });
+                // Inform user with an ad-style preview (large thumbnail + title) instead of a raw image
+                const infoThumb = video.thumbnail;
+                await sock.sendMessage(chatId, {
+                        text: `🎵 Downloading: *${video.title}*\n⏱ Duration: ${video.timestamp}`,
+                        contextInfo: {
+                                externalAdReply: {
+                                        title: video.title || 'Mickey Glitch Music',
+                                        body: 'Downloading audio...',
+                                        thumbnailUrl: infoThumb,
+                                        sourceUrl: video.url || infoThumb,
+                                        mediaType: 1,
+                                        showAdAttribution: false,
+                                        renderLargerThumbnail: true
+                                }
+                        }
+                }, { quoted: message });
 
                 // Try Yupra primary, then Okatsu fallback
                 let audioData;
@@ -91,6 +102,40 @@ async function songCommand(sock, chatId, message) {
                 }
 
                 const audioUrl = audioData.download || audioData.dl || audioData.url;
+
+                // Fast path: if remote URL is already MP3 (by extension or content-type HEAD), stream it directly to avoid full download delays
+                let isRemoteMp3 = false;
+                try {
+                        if (audioUrl) {
+                                const head = await axios.head(audioUrl, {
+                                        timeout: 10000,
+                                        maxRedirects: 5,
+                                        headers: AXIOS_DEFAULTS.headers
+                                }).catch(() => null);
+                                const ctype = head?.headers?.['content-type'] || '';
+                                if (/audio\/mpeg|audio\/mp3|mpeg/i.test(ctype) || /\.mp3(\?|$)/i.test(audioUrl)) {
+                                        isRemoteMp3 = true;
+                                }
+                        }
+                } catch (e) {
+                        // ignore HEAD failures and fall back to download
+                }
+
+                if (isRemoteMp3 && audioUrl) {
+                        // Send remote mp3 by URL to speed up delivery
+                        try {
+                                await sock.sendMessage(chatId, {
+                                        audio: { url: audioUrl },
+                                        mimetype: 'audio/mpeg',
+                                        fileName: `${(audioData.title || video.title || 'song')}.mp3`,
+                                        ptt: false
+                                }, { quoted: message });
+                                return; // finished
+                        } catch (sendErr) {
+                                // If streaming by URL fails, continue to full download fallback
+                                console.warn('Streaming by URL failed, falling back to download:', sendErr?.message || sendErr);
+                        }
+                }
 
                 // Download audio to buffer - try arraybuffer first, fallback to stream
                 let audioBuffer;
@@ -200,62 +245,22 @@ async function songCommand(sock, chatId, message) {
                         }
                 }
 
-                // Send audio with improved thumbnail (externalAdReply) and faster streaming when possible
-                const thumbnailUrl = audioData.thumbnail || video.thumbnail;
-
-                // Start fetching thumbnail concurrently (non-blocking) to reduce latency
-                const thumbnailPromise = thumbnailUrl ? axios.get(thumbnailUrl, { responseType: 'arraybuffer', timeout: 10000 }).then(res => Buffer.from(res.data)).catch(() => null) : Promise.resolve(null);
-
-                // If we have a direct MP3 URL, send by URL to avoid downloading the full file (faster)
+                // Send audio-only (no image/thumbnail). The initial info message already showed an ad-style preview.
                 if (finalExtension === 'mp3' && audioUrl) {
                         const messageContent = {
                                 audio: { url: audioUrl },
                                 mimetype: finalMimetype,
                                 fileName: `${(audioData.title || video.title || 'song')}.${finalExtension}`,
-                                ptt: false,
-                                caption: `🎵 *${audioData.title || video.title}*\n\n✨ Mickey Glitch Music Bot`,
-                                contextInfo: {
-                                        externalAdReply: {
-                                                title: audioData.title || video.title || 'Mickey Glitch Music',
-                                                body: 'Mickey Glitch Music Bot',
-                                                thumbnailUrl: thumbnailUrl,
-                                                sourceUrl: audioUrl,
-                                                mediaType: 1,
-                                                showAdAttribution: false,
-                                                renderLargerThumbnail: true
-                                        }
-                                }
+                                ptt: false
                         };
-
-                        // Attach fetched jpegThumbnail if available (some clients prefer inline thumbnail)
-                        const jpegThumb = await thumbnailPromise;
-                        if (jpegThumb) messageContent.jpegThumbnail = jpegThumb;
-
                         await sock.sendMessage(chatId, messageContent, { quoted: message });
                 } else {
-                        // Fallback: we have a buffer (converted or original non-mp3) - send as uploaded audio
                         const messageContent = {
                                 audio: finalBuffer,
                                 mimetype: finalMimetype,
                                 fileName: `${(audioData.title || video.title || 'song')}.${finalExtension}`,
-                                ptt: false,
-                                caption: `🎵 *${audioData.title || video.title}*\n\n✨ Mickey Glitch Music Bot`,
-                                contextInfo: {
-                                        externalAdReply: {
-                                                title: audioData.title || video.title || 'Mickey Glitch Music',
-                                                body: 'Mickey Glitch Music Bot',
-                                                thumbnailUrl: thumbnailUrl,
-                                                sourceUrl: video.url || audioUrl || thumbnailUrl,
-                                                mediaType: 1,
-                                                showAdAttribution: false,
-                                                renderLargerThumbnail: true
-                                        }
-                                }
+                                ptt: false
                         };
-
-                        const jpegThumb = await thumbnailPromise;
-                        if (jpegThumb) messageContent.jpegThumbnail = jpegThumb;
-
                         await sock.sendMessage(chatId, messageContent, { quoted: message });
                 }
 
