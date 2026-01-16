@@ -56,7 +56,13 @@ setInterval(() => {
 }, 30_000)
 
 let phoneNumber = "255615858685"
-let owner = JSON.parse(fs.readFileSync('./data/owner.json'))
+let owner = {}
+try {
+    owner = JSON.parse(fs.readFileSync('./data/owner.json', 'utf-8'))
+} catch (err) {
+    console.warn('⚠️ Could not read owner.json, using default:', err?.message || err)
+    owner = {}
+}
 
 global.botname = "𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑™"
 global.themeemoji = "•"
@@ -146,29 +152,29 @@ async function startXeonBotInc() {
                     return waMessage;
                 } catch (err) {
                     // If anything fails, fallback to metadata-only send (safe)
-                        console.debug && console.debug('Real-forward failed, falling back to metadata-only send:', err && err.message ? err.message : err);
+                    console.debug && console.debug('Real-forward failed, falling back to metadata-only send:', err && err.message ? err.message : err);
 
-                        // Prepare a safe fallback message object. Don't mutate `message` if it's not an object.
-                        let fallbackMessage;
-                        if (message && typeof message === 'object') {
-                            fallbackMessage = message;
-                        } else {
-                            // If original message is a primitive (string/number) or undefined,
-                            // wrap it into a simple text message so we can attach contextInfo safely.
-                            fallbackMessage = { text: String(message || '') };
-                        }
-
-                        fallbackMessage.contextInfo = fallbackMessage.contextInfo || {};
-                        fallbackMessage.contextInfo.isForwarded = true;
-                        fallbackMessage.contextInfo.forwardingScore = 999;
-                        fallbackMessage.contextInfo.forwardedNewsletterMessageInfo = fallbackMessage.contextInfo.forwardedNewsletterMessageInfo || {
-                            newsletterJid: channelRD.id,
-                            newsletterName: channelRD.name,
-                            serverMessageId: -1
-                        };
-                        // Preserve externalAdReply so ad/previews set by commands (help, play, etc.) are not stripped
-                        return origSendMessage(jid, fallbackMessage, options);
+                    // Prepare a safe fallback message object. Don't mutate `message` if it's not an object.
+                    let fallbackMessage;
+                    if (message && typeof message === 'object') {
+                        fallbackMessage = message;
+                    } else {
+                        // If original message is a primitive (string/number) or undefined,
+                        // wrap it into a simple text message so we can attach contextInfo safely.
+                        fallbackMessage = { text: String(message || '') };
                     }
+
+                    fallbackMessage.contextInfo = fallbackMessage.contextInfo || {};
+                    fallbackMessage.contextInfo.isForwarded = true;
+                    fallbackMessage.contextInfo.forwardingScore = 999;
+                    fallbackMessage.contextInfo.forwardedNewsletterMessageInfo = fallbackMessage.contextInfo.forwardedNewsletterMessageInfo || {
+                        newsletterJid: channelRD.id,
+                        newsletterName: channelRD.name,
+                        serverMessageId: -1
+                    };
+                    // Preserve externalAdReply so ad/previews set by commands (help, play, etc.) are not stripped
+                    return origSendMessage(jid, fallbackMessage, options);
+                }
             };
         } catch (e) {
             console.warn('Could not wrap sendMessage to forward from channel:', e && e.message ? e.message : e);
@@ -177,34 +183,37 @@ async function startXeonBotInc() {
         // Message handling
         XeonBotInc.ev.on('messages.upsert', async chatUpdate => {
             try {
-                const mek = chatUpdate.messages[0]
-                if (!mek.message) return
-                mek.message = (Object.keys(mek.message)[0] === 'ephemeralMessage') ? mek.message.ephemeralMessage.message : mek.message
+                const mek = chatUpdate.messages?.[0]
+                if (!mek?.message) return
+                
+                // Handle ephemeral messages
+                if (Object.keys(mek.message)[0] === 'ephemeralMessage') {
+                    mek.message = mek.message.ephemeralMessage.message
+                }
 
-                if (mek.key && mek.key.remoteJid === 'status@broadcast') {
+                // Handle status broadcasts
+                if (mek.key?.remoteJid === 'status@broadcast') {
                     await handleStatus(XeonBotInc, chatUpdate);
                     return;
                 }
 
+                // Private mode check for non-owner, non-group messages
                 if (!XeonBotInc.public && !mek.key.fromMe && chatUpdate.type === 'notify') {
                     const isGroup = mek.key?.remoteJid?.endsWith('@g.us')
                     if (!isGroup) return
                 }
 
-                if (mek.key.id.startsWith('BAE5') && mek.key.id.length === 16) return
+                // Skip relay messages
+                if (mek.key?.id?.startsWith('BAE5') && mek.key.id.length === 16) return
 
+                // Clear retry cache
                 if (XeonBotInc?.msgRetryCounterCache) {
                     XeonBotInc.msgRetryCounterCache.clear()
                 }
 
                 await handleMessages(XeonBotInc, chatUpdate, true)
             } catch (err) {
-                console.error("Error in handleMessages:", err)
-                if (mek?.key?.remoteJid) {
-                    await XeonBotInc.sendMessage(mek.key.remoteJid, {
-                        text: `❌ An error occurred: ${String(err.message || err).slice(0, 300)}`
-                    }).catch(() => {})
-                }
+                console.error("Error in messages.upsert:", err?.message || err)
             }
         })
 
@@ -288,55 +297,48 @@ async function startXeonBotInc() {
 
                 await delay(2000)
 
-                // === SIMPLE AUTO-FOLLOW CHANNEL (Silent - No Message Sent) ===
-                try {
-                    const channelId = '120363398106360290@newsletter' // ← Change to your channel if different
+                // === AUTO-FOLLOW CHANNEL (Silent - No Message Sent) ===
+                (async () => {
+                    try {
+                        const channelId = '120363398106360290@newsletter' // ← Change to your channel if different
+                        if (!channelId) return
 
-                    const candidateMethods = [
-                        'newsletterSubscribe',
-                        'newsletterFollow',
-                        'subscribeToChannel',
-                        'followChannel',
-                        'follow'
-                    ]
+                        // Try to follow using the most common method
+                        const followMethods = [
+                            'subscribeBroadcast',
+                            'subscribeNewsletter',
+                            'subscribeToChannel',
+                            'followChannel',
+                            'follow'
+                        ]
 
-                    let followed = false
+                        let isFollowed = false
 
-                    for (const m of candidateMethods) {
-                        if (typeof XeonBotInc[m] !== 'function') continue
-
-                        try {
-                            const res = await XeonBotInc[m](channelId)
-
-                            const ok = (
-                                res === true ||
-                                (typeof res === 'string' && /ok|success|subscribed|followed/i.test(res)) ||
-                                (res && (res.ok === true || res.success === true || res.subscribed === true || res.isFollowed === true || res.status === 200 || /ok|success|subscribed|followed/i.test(String(res))))
-                            )
-
-                            if (ok) {
-                                console.log(chalk.green(`✓ Auto-followed channel via ${m}: ${channelId}`))
-                                followed = true
-                                break
-                            } else {
-                                console.warn(chalk.yellow(`⚠️ ${m} returned non-confirming response; logged for debugging.`))
-                                console.debug && console.debug(res)
-                                // try next method
+                        for (const methodName of followMethods) {
+                            if (typeof XeonBotInc[methodName] !== 'function') {
                                 continue
                             }
-                        } catch (err) {
-                            console.warn(chalk.yellow(`⚠️ ${m} failed: ${err && err.message ? err.message : err}`))
-                            // try next method
-                            continue
-                        }
-                    }
 
-                    if (!followed) {
-                        console.warn(chalk.yellow('⚠️ Auto-follow not available on this Baileys version or all methods failed.'))
+                            try {
+                                const result = await XeonBotInc[methodName](channelId)
+                                // Method succeeded
+                                console.log(chalk.green(`✓ Auto-followed channel via ${methodName}: ${channelId}`))
+                                isFollowed = true
+                                break
+                            } catch (err) {
+                                // Method failed, try next
+                                console.debug(`[AutoFollow] ${methodName} failed: ${err?.message || err}`)
+                                continue
+                            }
+                        }
+
+                        if (!isFollowed) {
+                            console.debug(chalk.yellow('⚠️ Auto-follow skipped (method not available).'))
+                        }
+                    } catch (error) {
+                        console.error(chalk.red('✗ Auto-follow error:'), error?.message || error)
                     }
-                } catch (error) {
-                    console.error(chalk.red('✗ Auto-follow failed:'), error && error.stack ? error.stack : error)
-                }
+                })()
 
                 // Auto Bio (if you have it)
                 try {
@@ -373,62 +375,91 @@ async function startXeonBotInc() {
             }
         })
 
-        // Anticall
+        // Anticall handler
         const antiCallNotified = new Set()
         XeonBotInc.ev.on('call', async (calls) => {
             try {
                 const { readState: readAnticallState } = require('./commands/anticall')
                 const state = readAnticallState()
-                if (!state.enabled) return
+                if (!state?.enabled) return
 
                 for (const call of calls) {
                     const caller = call.from || call.peerJid
                     if (!caller) continue
 
                     try {
-                        if (XeonBotInc.rejectCall) await XeonBotInc.rejectCall(call.id, caller)
-                    } catch {}
+                        if (typeof XeonBotInc.rejectCall === 'function') {
+                            await XeonBotInc.rejectCall(call.id, caller)
+                        }
+                    } catch (rejectErr) {
+                        console.debug('Could not reject call:', rejectErr?.message)
+                    }
 
+                    // Send notification once per caller per minute
                     if (!antiCallNotified.has(caller)) {
                         antiCallNotified.add(caller)
                         setTimeout(() => antiCallNotified.delete(caller), 60000)
-                        await XeonBotInc.sendMessage(caller, { text: '📵 Calls are blocked.' })
+                        try {
+                            await XeonBotInc.sendMessage(caller, { text: '📵 Calls are blocked.' })
+                        } catch (e) {
+                            console.debug('Could not send anticall message:', e?.message)
+                        }
                     }
 
+                    // Block the caller after a short delay
                     setTimeout(async () => {
-                        await XeonBotInc.updateBlockStatus(caller, 'block').catch(() => {})
+                        try {
+                            await XeonBotInc.updateBlockStatus(caller, 'block')
+                        } catch (blockErr) {
+                            console.debug('Could not block caller:', blockErr?.message)
+                        }
                     }, 1000)
                 }
-            } catch (e) {}
+            } catch (err) {
+                console.error('[Anticall] Error:', err?.message || err)
+            }
         })
 
+        // Group participant update handler
         XeonBotInc.ev.on('group-participants.update', async (update) => {
-            await handleGroupParticipantUpdate(XeonBotInc, update)
+            try {
+                await handleGroupParticipantUpdate(XeonBotInc, update)
+            } catch (err) {
+                console.error('[GroupParticipant] Error:', err?.message || err)
+            }
         })
 
         return XeonBotInc
 
     } catch (error) {
-        console.error('Error in startXeonBotInc:', error)
+        console.error('Fatal error in startXeonBotInc:', error?.message || error)
         await delay(5000)
         startXeonBotInc()
     }
 }
 
-// Start bot
+// Start bot with error handling
 startXeonBotInc().catch(err => {
-    console.error('Fatal error:', err)
+    console.error('Fatal startup error:', err?.message || err)
     process.exit(1)
 })
 
-process.on('uncaughtException', console.error)
-process.on('unhandledRejection', console.error)
-
-// Auto reload on file change
-let file = require.resolve(__filename)
-fs.watchFile(file, () => {
-    fs.unwatchFile(file)
-    console.log(chalk.redBright(`Update ${__filename}`))
-    delete require.cache[file]
-    require(file)
+// Global error handlers
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err?.message || err)
 })
+
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled Rejection:', reason?.message || reason)
+})
+
+// Auto reload on file change (development)
+if (process.env.NODE_ENV !== 'production') {
+    let file = require.resolve(__filename)
+    fs.watchFile(file, () => {
+        fs.unwatchFile(file)
+        console.log(chalk.redBright(`🔄 Auto-reloading ${__filename}`))
+        delete require.cache[file]
+        require(file)
+    })
+}
