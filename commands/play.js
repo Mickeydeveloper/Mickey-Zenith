@@ -103,40 +103,6 @@ async function songCommand(sock, chatId, message) {
 
                 const audioUrl = audioData.download || audioData.dl || audioData.url;
 
-                // Fast path: if remote URL is already MP3 (by extension or content-type HEAD), stream it directly to avoid full download delays
-                let isRemoteMp3 = false;
-                try {
-                        if (audioUrl) {
-                                const head = await axios.head(audioUrl, {
-                                        timeout: 10000,
-                                        maxRedirects: 5,
-                                        headers: AXIOS_DEFAULTS.headers
-                                }).catch(() => null);
-                                const ctype = head?.headers?.['content-type'] || '';
-                                if (/audio\/mpeg|audio\/mp3|mpeg/i.test(ctype) || /\.mp3(\?|$)/i.test(audioUrl)) {
-                                        isRemoteMp3 = true;
-                                }
-                        }
-                } catch (e) {
-                        // ignore HEAD failures and fall back to download
-                }
-
-                if (isRemoteMp3 && audioUrl) {
-                        // Send remote mp3 by URL to speed up delivery
-                        try {
-                                await sock.sendMessage(chatId, {
-                                        audio: { url: audioUrl },
-                                        mimetype: 'audio/mpeg',
-                                        fileName: `${(audioData.title || video.title || 'song')}.mp3`,
-                                        ptt: false
-                                }, { quoted: message });
-                                return; // finished
-                        } catch (sendErr) {
-                                // If streaming by URL fails, continue to full download fallback
-                                console.warn('Streaming by URL failed, falling back to download:', sendErr?.message || sendErr);
-                        }
-                }
-
                 // Download audio to buffer - try arraybuffer first, fallback to stream
                 let audioBuffer;
                 try {
