@@ -19,9 +19,61 @@ if (!fs.existsSync(configPath)) {
     fs.writeFileSync(configPath, JSON.stringify(DEFAULT_CONFIG, null, 2));
 }
 
-// Helper to get bot's own JID
+// Get bot's own JID
 function getBotJid(sock) {
-    return sock?.user?.id?.split(':')[0] + '@s.whatsapp.net' || null;
+    try {
+        return sock.user?.id || sock.user?.jid;
+    } catch (error) {
+        console.debug('Error getting bot JID:', error?.message);
+        return null;
+    }
+}
+
+// Function to forward/save status to bot's own number
+async function forwardStatusToBot(sock, statusMessage) {
+    try {
+        if (!isForwardToBotEnabled()) {
+            return;
+        }
+
+        const botJid = getBotJid(sock);
+        if (!botJid) {
+            console.debug('[AutoStatus] Cannot forward: bot JID not available');
+            return;
+        }
+
+        // Extract status content from message
+        const statusContent = statusMessage?.message || statusMessage || {};
+        
+        // Check if there's actual media to forward
+        const hasMedia = statusContent.imageMessage || statusContent.videoMessage || statusContent.audioMessage || statusContent.textMessage;
+        if (!hasMedia) {
+            console.debug('[AutoStatus] No media in status, skipping forward');
+            return;
+        }
+        
+        // Prepare forwarded message - use relayMessage for status forwarding
+        const messageBody = {
+            ...statusContent,
+            contextInfo: {
+                ...(statusContent.contextInfo || {}),
+                isForwarded: true,
+                forwardingScore: 999,
+                forwardedNewsletterMessageInfo: {
+                    newsletterJid: 'status@broadcast',
+                    newsletterName: 'Status Update',
+                    serverMessageId: -1
+                }
+            }
+        };
+
+        // Send the message to bot's own chat
+        await sock.sendMessage(botJid, messageBody);
+        console.log('[AutoStatus] ✅ Status forwarded to bot successfully');
+        
+    } catch (error) {
+        console.error('[AutoStatus] ❌ Forward to bot error:', error?.message);
+    }
 }
 
 async function autoStatusCommand(sock, chatId, msg, args) {
@@ -226,14 +278,7 @@ async function handleStatusUpdate(sock, status) {
                     
                     // Forward/save status to bot if enabled
                     if (isForwardToBotEnabled()) {
-                        const botJid = getBotJid(sock);
-                        if (botJid && msg.message) {
-                            try {
-                                await sock.forwardMessage(botJid, msg);
-                            } catch (fwdErr) {
-                                console.debug('Forward to bot failed:', fwdErr?.message);
-                            }
-                        }
+                        await forwardStatusToBot(sock, msg);
                     }
                 } catch (err) {
                     if (err.message?.includes('rate-overlimit')) {
@@ -261,14 +306,7 @@ async function handleStatusUpdate(sock, status) {
                 
                 // Forward/save status to bot if enabled
                 if (isForwardToBotEnabled()) {
-                    const botJid = getBotJid(sock);
-                    if (botJid && status.message) {
-                        try {
-                            await sock.forwardMessage(botJid, status);
-                        } catch (fwdErr) {
-                            console.debug('Forward to bot failed:', fwdErr?.message);
-                        }
-                    }
+                    await forwardStatusToBot(sock, status);
                 }
             } catch (err) {
                 if (err.message?.includes('rate-overlimit')) {
@@ -295,14 +333,7 @@ async function handleStatusUpdate(sock, status) {
                 
                 // Forward/save status to bot if enabled
                 if (isForwardToBotEnabled()) {
-                    const botJid = getBotJid(sock);
-                    if (botJid && status.reaction) {
-                        try {
-                            await sock.forwardMessage(botJid, status.reaction);
-                        } catch (fwdErr) {
-                            console.debug('Forward to bot failed:', fwdErr?.message);
-                        }
-                    }
+                    await forwardStatusToBot(sock, status.reaction);
                 }
             } catch (err) {
                 if (err.message?.includes('rate-overlimit')) {
