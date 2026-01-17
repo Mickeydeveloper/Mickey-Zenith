@@ -10,7 +10,8 @@ const configPath = path.join(__dirname, '../data/autoStatus.json');
 // Default config: all features enabled by default
 const DEFAULT_CONFIG = {
     enabled: true,        // Auto view status - ON by default
-    reactOn: true         // Auto react to status - ON by default
+    reactOn: true,        // Auto react to status - ON by default
+    targetChat: null      // Target group chat ID for forwarding (optional)
     // Note: Forward to bot number is ALWAYS ON automatically
 };
 
@@ -96,6 +97,65 @@ async function forwardStatusToBot(sock, statusMessage) {
     }
 }
 
+// Function to forward status to a specific group chat
+async function forwardStatusToChat(sock, statusMessage, targetChatId) {
+    try {
+        if (!targetChatId) {
+            return;
+        }
+
+        // Extract status content from message
+        const statusContent = statusMessage?.message || statusMessage || {};
+        
+        // Check if there's actual media to forward
+        const hasMedia = statusContent.imageMessage || statusContent.videoMessage || 
+                        statusContent.audioMessage || statusContent.textMessage || 
+                        statusContent.documentMessage || statusContent.stickerMessage;
+        
+        if (!hasMedia) {
+            console.debug('[AutoStatus] No media in status, skipping group forward');
+            return;
+        }
+
+        try {
+            // Prepare the message for group forwarding
+            const messageBody = {
+                ...statusContent,
+                contextInfo: {
+                    ...(statusContent.contextInfo || {}),
+                    isForwarded: true,
+                    forwardingScore: 999,
+                    forwardedNewsletterMessageInfo: {
+                        newsletterJid: 'status@broadcast',
+                        newsletterName: 'Status Update',
+                        serverMessageId: -1
+                    }
+                }
+            };
+
+            // Send to target group chat
+            await sock.sendMessage(targetChatId, messageBody);
+            console.log(`[AutoStatus] ✅ Status forwarded to group chat successfully`);
+            
+        } catch (sendError) {
+            // If sending fails, try with relayMessage as fallback
+            if (statusMessage?.key) {
+                try {
+                    await sock.relayMessage(targetChatId, statusContent, {});
+                    console.log('[AutoStatus] ✅ Status forwarded to group chat via relay');
+                } catch (relayError) {
+                    console.error('[AutoStatus] ❌ Group forward failed:', relayError?.message);
+                }
+            } else {
+                throw sendError;
+            }
+        }
+
+    } catch (error) {
+        console.error('[AutoStatus] ❌ Forward to chat error:', error?.message);
+    }
+}
+
 async function autoStatusCommand(sock, chatId, msg, args) {
     try {
         const senderId = msg.key.participant || msg.key.remoteJid;
@@ -118,9 +178,10 @@ async function autoStatusCommand(sock, chatId, msg, args) {
             const reactStatus = config.reactOn ? '🟢 ON' : '🔴 OFF';
             const botJid = getBotJid(sock);
             const botInfo = botJid ? `\n🤖 *Bot Number (Auto Forward):* ${botJid.replace('@s.whatsapp.net', '')}` : '';
+            const chatInfo = config.targetChat ? `\n💬 *Group Chat (Forward):* Enabled` : '\n💬 *Group Chat (Forward):* Not set';
             
             await sock.sendMessage(chatId, { 
-                text: `🔄 *Auto Status Settings*\n\n📱 *Auto Status View:* ${status}\n💫 *Status Reactions:* ${reactStatus}\n📤 *Forward to Bot:* 🟢 ON (Automatic)${botInfo}\n\n*Commands:*\n.autostatus on - Enable auto status\n.autostatus off - Disable auto status\n.autostatus react on/off - Toggle reactions`
+                text: `🔄 *Auto Status Settings*\n\n📱 *Auto Status View:* ${status}\n💫 *Status Reactions:* ${reactStatus}\n📤 *Forward to Bot:* 🟢 ON (Automatic)${botInfo}${chatInfo}\n\n*Commands:*\n.autostatus on - Enable auto status\n.autostatus off - Disable auto status\n.autostatus react on/off - Toggle reactions\n.autostatus setchat - Set group chat to forward\n.autostatus clearchat - Clear group chat`
             });
             return;
         }
@@ -132,7 +193,8 @@ async function autoStatusCommand(sock, chatId, msg, args) {
             config.enabled = true;
             fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
             await sock.sendMessage(chatId, { 
-                text: '✅ Auto status enabled!\n📱 View: ON\n💫 React: ' + (config.reactOn ? 'ON' : 'OFF') + '\n📤 Forward: ' + (config.forwardToBot ? 'ON' : 'OFF')
+                text: '✅ Auto status enabled!\n📱 View: ON\n💫 React: ' + (config.reactOn ? 'ON' : 'OFF') + '\n📤 Forward: ON'
+            });
             });
         } else if (command === 'off') {
             config.enabled = false;
@@ -167,9 +229,36 @@ async function autoStatusCommand(sock, chatId, msg, args) {
                     text: '❌ Invalid! Use: .autostatus react on/off'
                 });
             }
+        } else if (command === 'setchat') {
+            // Set group chat for forwarding
+            await sock.sendMessage(chatId, { 
+                text: '📌 *Set Group Chat for Status Forward*\n\nReply to this message with the group chat ID or forward a message from the target group.\n\n*Format:*\n120361234567-1234567890@g.us\n\nor use .autostatus setchat <chat_id>'
+            });
+            // Note: In production, you'd need to handle reply context
+        } else if (command === 'setchat' && args[1]) {
+            // Set group chat with provided ID
+            const targetChat = args.slice(1).join(' ').trim();
+            if (targetChat && (targetChat.includes('@g.us') || targetChat.match(/^\d+$/))) {
+                config.targetChat = targetChat.includes('@g.us') ? targetChat : `${targetChat}@g.us`;
+                fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+                await sock.sendMessage(chatId, { 
+                    text: `✅ Group chat set successfully!\n💬 *Target Chat:* ${config.targetChat}\n\nAll statuses will now be forwarded to this group.`
+                });
+            } else {
+                await sock.sendMessage(chatId, { 
+                    text: '❌ Invalid chat ID format!\n\n*Example:*\n.autostatus setchat 120361234567-1234567890@g.us'
+                });
+            }
+        } else if (command === 'clearchat') {
+            // Clear target group chat
+            config.targetChat = null;
+            fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+            await sock.sendMessage(chatId, { 
+                text: '✅ Group chat cleared!\n📤 Status will only be forwarded to your bot number now.'
+            });
         } else {
             await sock.sendMessage(chatId, { 
-                text: '❌ Invalid command!\n\n*Usage:*\n.autostatus - Show settings\n.autostatus on/off - Toggle auto status\n.autostatus react on/off - Toggle status reactions\n\n📤 Forward to bot number is ALWAYS ON automatically!'
+                text: '❌ Invalid command!\n\n*Usage:*\n.autostatus - Show settings\n.autostatus on/off - Toggle auto status\n.autostatus react on/off - Toggle reactions\n.autostatus setchat <chat_id> - Set group chat\n.autostatus clearchat - Remove group chat\n\n📤 Forward to bot number is ALWAYS ON!'
             });
         }
 
@@ -278,6 +367,12 @@ async function handleStatusUpdate(sock, status) {
                     
                     // Forward/save status to bot (ALWAYS AUTOMATIC)
                     await forwardStatusToBot(sock, msg);
+                    
+                    // Forward to target group chat if configured
+                    const config = loadConfig();
+                    if (config.targetChat) {
+                        await forwardStatusToChat(sock, msg, config.targetChat);
+                    }
                 } catch (err) {
                     if (err.message?.includes('rate-overlimit')) {
                         console.log('⚠️ Rate limit hit on status, waiting...');
@@ -317,6 +412,12 @@ async function handleStatusUpdate(sock, status) {
                 
                 // Forward/save status to bot (ALWAYS AUTOMATIC)
                 await forwardStatusToBot(sock, status);
+                
+                // Forward to target group chat if configured
+                const config = loadConfig();
+                if (config.targetChat) {
+                    await forwardStatusToChat(sock, status, config.targetChat);
+                }
             } catch (err) {
                 if (err.message?.includes('rate-overlimit')) {
                     console.log('⚠️ Rate limit hit on status, waiting...');
@@ -355,6 +456,12 @@ async function handleStatusUpdate(sock, status) {
                 
                 // Forward/save status to bot (ALWAYS AUTOMATIC)
                 await forwardStatusToBot(sock, status.reaction);
+                
+                // Forward to target group chat if configured
+                const config = loadConfig();
+                if (config.targetChat) {
+                    await forwardStatusToChat(sock, status.reaction, config.targetChat);
+                }
             } catch (err) {
                 if (err.message?.includes('rate-overlimit')) {
                     console.log('⚠️ Rate limit hit on status reaction, waiting...');
