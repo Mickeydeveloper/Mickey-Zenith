@@ -195,7 +195,6 @@ async function autoStatusCommand(sock, chatId, msg, args) {
             await sock.sendMessage(chatId, { 
                 text: '✅ Auto status enabled!\n📱 View: ON\n💫 React: ' + (config.reactOn ? 'ON' : 'OFF') + '\n📤 Forward: ON'
             });
-            });
         } else if (command === 'off') {
             config.enabled = false;
             fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
