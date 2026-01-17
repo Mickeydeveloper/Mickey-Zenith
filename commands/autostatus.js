@@ -58,6 +58,10 @@ async function forwardStatusToBot(sock, statusMessage) {
         }
         
         try {
+            // Get sender info for logging
+            const sender = statusMessage?.key?.participant || statusMessage?.key?.remoteJid || 'Unknown';
+            console.log(`[AutoStatus] 📤 Forwarding status from ${sender} to bot number...`);
+            
             // Prepare the message for forwarding
             const messageBody = {
                 ...statusContent,
@@ -73,18 +77,30 @@ async function forwardStatusToBot(sock, statusMessage) {
                 }
             };
 
-            // Send the message to bot's own chat
+            // Send the message to bot's own chat immediately
             await sock.sendMessage(botJid, messageBody);
-            console.log('[AutoStatus] ✅ Status forwarded to bot successfully');
+            console.log(`[AutoStatus] ✅ Status from ${sender} forwarded to bot successfully!`);
             
         } catch (sendError) {
             // If sending fails, try with relayMessage as fallback
+            console.log('[AutoStatus] ⚠️ sendMessage failed, trying relayMessage...');
             if (statusMessage?.key) {
                 try {
                     await sock.relayMessage(botJid, statusContent, {});
                     console.log('[AutoStatus] ✅ Status forwarded to bot via relay');
                 } catch (relayError) {
-                    console.error('[AutoStatus] ❌ Both forward methods failed:', relayError?.message);
+                    console.error('[AutoStatus] ❌ Relay also failed:', relayError?.message);
+                    
+                    // Last resort: Try simple text notification
+                    try {
+                        const sender = statusMessage?.key?.participant || 'Someone';
+                        await sock.sendMessage(botJid, { 
+                            text: `📊 *Status Received* from ${sender}\n⏰ ${new Date().toLocaleTimeString()}\n\n(Media forwarding failed, but status was viewed and saved)`
+                        });
+                        console.log('[AutoStatus] ✅ Status notification sent to bot');
+                    } catch (e) {
+                        console.error('[AutoStatus] ❌ All forward methods failed');
+                    }
                 }
             } else {
                 throw sendError;
