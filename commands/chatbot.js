@@ -32,7 +32,9 @@ function saveState(state) {
 async function isEnabledForChat(state, chatId) {
   if (!state || !chatId) return false;
   if (chatId.endsWith('@g.us')) {
-    if (state.perGroup?.[chatId]) return true;
+    if (state.perGroup?.[chatId]?.enabled !== undefined) {
+      return !!state.perGroup[chatId].enabled;
+    }
     try {
       const lib = require('../lib/index');
       const cfg = await lib.getChatbot(chatId);
@@ -69,12 +71,11 @@ function extractMessageText(message) {
 }
 
 // ────────────────────────────────────────────────
-//          VOICE SETTINGS - you can change here
+//          VOICE SETTINGS - customize here
 // ────────────────────────────────────────────────
-const DEFAULT_VOICE_MODEL = "ana";          // Good neutral female voice
-// Other nice options: "nahida", "nami", "taylor_swift", "miku", "kendrick_lamar"
-// const MIN_TEXT_LENGTH_FOR_VOICE = 10;
-// const MAX_TEXT_LENGTH_FOR_VOICE = 800;
+const DEFAULT_VOICE_MODEL = "ana";           // Change to: nahida, nami, taylor_swift, goku, etc.
+// const MIN_TEXT_FOR_VOICE = 8;
+// const MAX_TEXT_FOR_VOICE = 1200;
 
 async function handleChatbotMessage(sock, chatId, message) {
   try {
@@ -89,13 +90,13 @@ async function handleChatbotMessage(sock, chatId, message) {
 
     console.log(`[Chatbot] \( {chatId} → " \){userText.substring(0, 70)}${userText.length > 70 ? '...' : ''}"`);
 
-    // Show typing indicator
+    // Show typing
     try {
       await sock.sendPresenceUpdate('composing', chatId);
-      await new Promise(r => setTimeout(r, 600 + Math.random() * 800));
+      await new Promise(r => setTimeout(r, 700 + Math.random() * 900));
     } catch {}
 
-    // ──── Call AI API ────
+    // ──── Get AI response ────
     const encoded = encodeURIComponent(userText);
     const apiUrl = `https://api.yupra.my.id/api/ai/gpt5?text=${encoded}`;
 
@@ -105,17 +106,12 @@ async function handleChatbotMessage(sock, chatId, message) {
       const res = await fetch(apiUrl, {
         method: 'GET',
         headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(25000)
+        signal: AbortSignal.timeout(30000)
       });
 
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => '(no body)');
-        console.log(`[API] ${res.status} - ${errBody.slice(0, 200)}`);
-        throw new Error(`HTTP ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data = await res.json();
-      console.log('[API RAW]', JSON.stringify(data, null, 2));
 
       apiResult =
         data?.response ||
@@ -128,31 +124,35 @@ async function handleChatbotMessage(sock, chatId, message) {
         (typeof data === 'string' ? data : null);
 
     } catch (err) {
-      console.error('[API request failed]', err.message);
+      console.error('[AI API failed]', err.message);
     }
 
     if (!apiResult) {
       await sock.sendMessage(chatId, { 
-        text: '❌ AI is not responding right now. Try again soon.' 
+        text: '❌ Sorry, AI is having issues right now. Try again later.' 
       }, { quoted: message });
       return;
     }
 
     const replyText = String(apiResult).trim();
 
-    // ──── Try to send as VOICE NOTE ────
-    let voiceSent = false;
+    // ──── 1. Always send the TEXT message first ────
+    const textMsg = await sock.sendMessage(chatId, { 
+      text: replyText 
+    }, { quoted: message });
 
+    // ──── 2. Then try to send VOICE NOTE ────
     try {
-      // Optional: skip very short / very long messages
-      if (replyText.length < 12 || replyText.length > 950) {
-        throw new Error("Text length not suitable for voice");
+      // Optional length filter - adjust as you like
+      if (replyText.length < 10 || replyText.length > 1100) {
+        console.log("[Voice] Skipped - text too short/long");
+        return;
       }
 
       const voiceApiUrl = `https://api.agatz.xyz/api/voiceover?text=\( {encodeURIComponent(replyText)}&model= \){DEFAULT_VOICE_MODEL}`;
 
       const response = await axios.get(voiceApiUrl, {
-        timeout: 30000
+        timeout: 35000
       });
 
       if (response.data?.status === 200 && response.data?.data?.oss_url) {
@@ -161,30 +161,26 @@ async function handleChatbotMessage(sock, chatId, message) {
         await sock.sendMessage(chatId, {
           audio: { url: audioUrl },
           mimetype: 'audio/mpeg',
-          ptt: true,                    // ← makes it a voice note
-          fileName: 'AI_Response.mp3',
-          // You can also add: waveform: Buffer.from([...]), but not necessary
-        }, { quoted: message });
+          ptt: true,                    // voice note (ptt = push-to-talk style)
+          fileName: 'AI Voice Reply.mp3',
+          // Optional: seconds, waveform, etc. (Baileys can auto-detect duration)
+        }, { quoted: textMsg });       // quote the text message → voice appears as reply to text
 
-        voiceSent = true;
-        console.log(`[Voice] Sent voice note using model: ${DEFAULT_VOICE_MODEL}`);
+        console.log(`[Voice] Sent voice note (${replyText.length} chars) using ${DEFAULT_VOICE_MODEL}`);
+      } else {
+        console.log("[Voice] API returned non-200 or no url");
       }
     } catch (voiceErr) {
       console.error("[Voice generation failed]", voiceErr.message || voiceErr);
-    }
-
-    // ──── Fallback: send as text if voice failed ────
-    if (!voiceSent) {
-      await sock.sendMessage(chatId, { 
-        text: replyText 
-      }, { quoted: message });
-      console.log("[Voice] Fallback to text");
+      // No fallback needed - text was already sent
     }
 
   } catch (err) {
-    console.error('Chatbot error:', err);
+    console.error('Chatbot general error:', err);
     try {
-      await sock.sendMessage(chatId, { text: '⚠️ Something went wrong. Try again later.' }, { quoted: message });
+      await sock.sendMessage(chatId, { 
+        text: '⚠️ Something went wrong. Please try again.' 
+      }, { quoted: message });
     } catch {}
   }
 }
@@ -202,7 +198,7 @@ async function groupChatbotToggleCommand(sock, chatId, message, args) {
 
       const sender = message.key.participant || message.key.remoteJid;
       const isOwner = message.key.fromMe || await require('../lib/isOwner')(sender, sock, chatId);
-      if (!isOwner) return sock.sendMessage(chatId, { text: 'Owner only command.' }, { quoted: message });
+      if (!isOwner) return sock.sendMessage(chatId, { text: 'Owner only.' }, { quoted: message });
 
       const state = loadState();
       if (sub === 'status') {
@@ -211,7 +207,7 @@ async function groupChatbotToggleCommand(sock, chatId, message, args) {
 
       state.private = sub === 'on';
       saveState(state);
-      return sock.sendMessage(chatId, { text: `Private mode now *${state.private ? 'ON' : 'OFF'}*` }, { quoted: message });
+      return sock.sendMessage(chatId, { text: `Private mode: *${state.private ? 'ON' : 'OFF'}*` }, { quoted: message });
     }
 
     if (!chatId.endsWith('@g.us')) {
@@ -235,28 +231,29 @@ async function groupChatbotToggleCommand(sock, chatId, message, args) {
     if (onoff === 'status') {
       const lib = require('../lib/index');
       const cfg = await lib.getChatbot(chatId);
-      const enabled = !!state.perGroup[chatId] || !!(cfg && cfg.enabled);
+      const enabled = state.perGroup[chatId]?.enabled ?? !!(cfg && cfg.enabled);
       return sock.sendMessage(chatId, { text: `Chatbot: *${enabled ? 'ON' : 'OFF'}*` }, { quoted: message });
     }
 
     const lib = require('../lib/index');
-    state.perGroup[chatId] = onoff === 'on';
+    state.perGroup[chatId] = state.perGroup[chatId] || {};
+    state.perGroup[chatId].enabled = onoff === 'on';
     saveState(state);
 
     try {
-      if (state.perGroup[chatId]) await lib.setChatbot(chatId, true);
+      if (state.perGroup[chatId].enabled) await lib.setChatbot(chatId, true);
       else await lib.removeChatbot(chatId);
     } catch (e) {
-      console.log('Sync failed:', e?.message);
+      console.log('Lib sync failed:', e?.message);
     }
 
     return sock.sendMessage(chatId, { 
-      text: `Chatbot now ${state.perGroup[chatId] ? 'ON' : 'OFF'}!` 
+      text: `Chatbot is now *${state.perGroup[chatId].enabled ? 'ON' : 'OFF'}*` 
     }, { quoted: message });
 
   } catch (e) {
-    console.error('Toggle error:', e);
-    sock.sendMessage(chatId, { text: 'Toggle failed.' }, { quoted: message });
+    console.error('Toggle command error:', e);
+    sock.sendMessage(chatId, { text: 'Command failed.' }, { quoted: message });
   }
 }
 
