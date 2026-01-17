@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
+const axios = require('axios');
 const isAdmin = require('../lib/isAdmin');
 
 const STATE_PATH = path.join(__dirname, '..', 'data', 'chatbot.json');
@@ -67,6 +68,14 @@ function extractMessageText(message) {
   return '';
 }
 
+// ────────────────────────────────────────────────
+//          VOICE SETTINGS - you can change here
+// ────────────────────────────────────────────────
+const DEFAULT_VOICE_MODEL = "ana";          // Good neutral female voice
+// Other nice options: "nahida", "nami", "taylor_swift", "miku", "kendrick_lamar"
+// const MIN_TEXT_LENGTH_FOR_VOICE = 10;
+// const MAX_TEXT_LENGTH_FOR_VOICE = 800;
+
 async function handleChatbotMessage(sock, chatId, message) {
   try {
     if (!chatId) return;
@@ -80,13 +89,13 @@ async function handleChatbotMessage(sock, chatId, message) {
 
     console.log(`[Chatbot] \( {chatId} → " \){userText.substring(0, 70)}${userText.length > 70 ? '...' : ''}"`);
 
-    // Show typing
+    // Show typing indicator
     try {
       await sock.sendPresenceUpdate('composing', chatId);
       await new Promise(r => setTimeout(r, 600 + Math.random() * 800));
     } catch {}
 
-    // ──── Only user message is sent ────
+    // ──── Call AI API ────
     const encoded = encodeURIComponent(userText);
     const apiUrl = `https://api.yupra.my.id/api/ai/gpt5?text=${encoded}`;
 
@@ -106,8 +115,6 @@ async function handleChatbotMessage(sock, chatId, message) {
       }
 
       const data = await res.json();
-
-      // Debug: see what the API actually returns
       console.log('[API RAW]', JSON.stringify(data, null, 2));
 
       apiResult =
@@ -133,10 +140,52 @@ async function handleChatbotMessage(sock, chatId, message) {
 
     const replyText = String(apiResult).trim();
 
-    await sock.sendMessage(chatId, { text: replyText }, { quoted: message });
+    // ──── Try to send as VOICE NOTE ────
+    let voiceSent = false;
+
+    try {
+      // Optional: skip very short / very long messages
+      if (replyText.length < 12 || replyText.length > 950) {
+        throw new Error("Text length not suitable for voice");
+      }
+
+      const voiceApiUrl = `https://api.agatz.xyz/api/voiceover?text=\( {encodeURIComponent(replyText)}&model= \){DEFAULT_VOICE_MODEL}`;
+
+      const response = await axios.get(voiceApiUrl, {
+        timeout: 30000
+      });
+
+      if (response.data?.status === 200 && response.data?.data?.oss_url) {
+        const audioUrl = response.data.data.oss_url;
+
+        await sock.sendMessage(chatId, {
+          audio: { url: audioUrl },
+          mimetype: 'audio/mpeg',
+          ptt: true,                    // ← makes it a voice note
+          fileName: 'AI_Response.mp3',
+          // You can also add: waveform: Buffer.from([...]), but not necessary
+        }, { quoted: message });
+
+        voiceSent = true;
+        console.log(`[Voice] Sent voice note using model: ${DEFAULT_VOICE_MODEL}`);
+      }
+    } catch (voiceErr) {
+      console.error("[Voice generation failed]", voiceErr.message || voiceErr);
+    }
+
+    // ──── Fallback: send as text if voice failed ────
+    if (!voiceSent) {
+      await sock.sendMessage(chatId, { 
+        text: replyText 
+      }, { quoted: message });
+      console.log("[Voice] Fallback to text");
+    }
 
   } catch (err) {
     console.error('Chatbot error:', err);
+    try {
+      await sock.sendMessage(chatId, { text: '⚠️ Something went wrong. Try again later.' }, { quoted: message });
+    } catch {}
   }
 }
 
