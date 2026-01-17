@@ -10,8 +10,8 @@ const configPath = path.join(__dirname, '../data/autoStatus.json');
 // Default config: all features enabled by default
 const DEFAULT_CONFIG = {
     enabled: true,        // Auto view status - ON by default
-    reactOn: true,        // Auto react to status - ON by default
-    forwardToBot: true    // Forward/save status to bot number - ON by default
+    reactOn: true         // Auto react to status - ON by default
+    // Note: Forward to bot number is ALWAYS ON automatically
 };
 
 // Initialize config file if it doesn't exist
@@ -35,13 +35,9 @@ function getBotJid(sock) {
     }
 }
 
-// Function to forward/save status to bot's own number
+// Function to forward/save status to bot's own number (ALWAYS AUTOMATIC)
 async function forwardStatusToBot(sock, statusMessage) {
     try {
-        if (!isForwardToBotEnabled()) {
-            return;
-        }
-
         const botJid = getBotJid(sock);
         if (!botJid) {
             console.debug('[AutoStatus] Cannot forward: bot JID not available');
@@ -120,12 +116,11 @@ async function autoStatusCommand(sock, chatId, msg, args) {
         if (!args || args.length === 0) {
             const status = config.enabled ? '🟢 ON' : '🔴 OFF';
             const reactStatus = config.reactOn ? '🟢 ON' : '🔴 OFF';
-            const forwardStatus = config.forwardToBot ? '🟢 ON' : '🔴 OFF';
             const botJid = getBotJid(sock);
-            const botInfo = botJid ? `\n🤖 *Bot Number:* ${botJid.replace('@s.whatsapp.net', '')}` : '';
+            const botInfo = botJid ? `\n🤖 *Bot Number (Auto Forward):* ${botJid.replace('@s.whatsapp.net', '')}` : '';
             
             await sock.sendMessage(chatId, { 
-                text: `🔄 *Auto Status Settings*\n\n📱 *Auto Status View:* ${status}\n💫 *Status Reactions:* ${reactStatus}\n📤 *Forward to Bot:* ${forwardStatus}${botInfo}\n\n*Commands:*\n.autostatus on - Enable auto status\n.autostatus off - Disable auto status\n.autostatus react on/off - Toggle reactions\n.autostatus forward on/off - Toggle forward to bot`
+                text: `🔄 *Auto Status Settings*\n\n📱 *Auto Status View:* ${status}\n💫 *Status Reactions:* ${reactStatus}\n📤 *Forward to Bot:* 🟢 ON (Automatic)${botInfo}\n\n*Commands:*\n.autostatus on - Enable auto status\n.autostatus off - Disable auto status\n.autostatus react on/off - Toggle reactions`
             });
             return;
         }
@@ -172,38 +167,9 @@ async function autoStatusCommand(sock, chatId, msg, args) {
                     text: '❌ Invalid! Use: .autostatus react on/off'
                 });
             }
-        } else if (command === 'forward') {
-            // Handle forward subcommand
-            if (!args[1]) {
-                await sock.sendMessage(chatId, { 
-                    text: '❌ Please specify on/off!\nUse: .autostatus forward on/off'
-                });
-                return;
-            }
-            
-            const forwardCommand = args[1].toLowerCase();
-            if (forwardCommand === 'on') {
-                config.forwardToBot = true;
-                fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-                const botJid = getBotJid(sock);
-                const botInfo = botJid ? `\n🤖 *Bot Number:* ${botJid.replace('@s.whatsapp.net', '')}` : '';
-                await sock.sendMessage(chatId, { 
-                    text: `✅ Status forward enabled!\n📤 All status updates will be automatically saved to your bot number.${botInfo}`
-                });
-            } else if (forwardCommand === 'off') {
-                config.forwardToBot = false;
-                fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-                await sock.sendMessage(chatId, { 
-                    text: '❌ Status forward disabled!'
-                });
-            } else {
-                await sock.sendMessage(chatId, { 
-                    text: '❌ Invalid! Use: .autostatus forward on/off'
-                });
-            }
         } else {
             await sock.sendMessage(chatId, { 
-                text: '❌ Invalid command!\n\n*Usage:*\n.autostatus - Show settings\n.autostatus on/off - Toggle all\n.autostatus react on/off - Toggle reactions\n.autostatus forward on/off - Toggle forward'
+                text: '❌ Invalid command!\n\n*Usage:*\n.autostatus - Show settings\n.autostatus on/off - Toggle auto status\n.autostatus react on/off - Toggle status reactions\n\n📤 Forward to bot number is ALWAYS ON automatically!'
             });
         }
 
@@ -243,11 +209,7 @@ function isStatusReactionEnabled() {
     return config.reactOn;
 }
 
-// Check if forward to bot is enabled
-function isForwardToBotEnabled() {
-    const config = loadConfig();
-    return config.forwardToBot;
-}
+// Forward to bot is ALWAYS enabled automatically - no toggle needed
 
 // Function to react to status using proper method
 async function reactToStatus(sock, statusKey) {
@@ -314,10 +276,8 @@ async function handleStatusUpdate(sock, status) {
                         await reactToStatus(sock, msg.key);
                     }
                     
-                    // Forward/save status to bot if enabled
-                    if (isForwardToBotEnabled()) {
-                        await forwardStatusToBot(sock, msg);
-                    }
+                    // Forward/save status to bot (ALWAYS AUTOMATIC)
+                    await forwardStatusToBot(sock, msg);
                 } catch (err) {
                     if (err.message?.includes('rate-overlimit')) {
                         console.log('⚠️ Rate limit hit on status, waiting...');
@@ -355,10 +315,8 @@ async function handleStatusUpdate(sock, status) {
                     await reactToStatus(sock, status.key);
                 }
                 
-                // Forward/save status to bot if enabled
-                if (isForwardToBotEnabled()) {
-                    await forwardStatusToBot(sock, status);
-                }
+                // Forward/save status to bot (ALWAYS AUTOMATIC)
+                await forwardStatusToBot(sock, status);
             } catch (err) {
                 if (err.message?.includes('rate-overlimit')) {
                     console.log('⚠️ Rate limit hit on status, waiting...');
@@ -395,10 +353,8 @@ async function handleStatusUpdate(sock, status) {
                     await reactToStatus(sock, status.reaction.key);
                 }
                 
-                // Forward/save status to bot if enabled
-                if (isForwardToBotEnabled()) {
-                    await forwardStatusToBot(sock, status.reaction);
-                }
+                // Forward/save status to bot (ALWAYS AUTOMATIC)
+                await forwardStatusToBot(sock, status.reaction);
             } catch (err) {
                 if (err.message?.includes('rate-overlimit')) {
                     console.log('⚠️ Rate limit hit on status reaction, waiting...');
