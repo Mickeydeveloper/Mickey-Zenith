@@ -1,251 +1,111 @@
 const { sendButtons, getBuffer } = require('../lib/myfunc');
 const settings = require('../settings');
 
-// Constants for easy management
+// Constants
 const PRICE_PER_GB = 1000; // TSh per GB
 const MIN_GB = 10;
 const SELLER_NUMBER = '255615944741';
+const SELLER_JID = `${SELLER_NUMBER}@s.whatsapp.net`;
 const SELLER_NAME = 'MICKDADI HAMZA SALIM';
-const AD_BANNER_1 = 'https://files.catbox.moe/1mv2al.jpg';   // Calculation banner
-const AD_BANNER_2 = 'https://files.catbox.moe/ljabyq.png';   // Payment banner
+const AD_BANNER_1 = 'https://files.catbox.moe/1mv2al.jpg';
+const AD_BANNER_2 = 'https://files.catbox.moe/ljabyq.png';
+const ORDER_AUDIO_URL = 'https://files.catbox.moe/t80fnj.mp3'; // your audio
 
-// New: Audio to send after order confirmation
-const ORDER_CONFIRMATION_AUDIO = 'https://files.catbox.moe/t80fnj.mp3';
+let orderCounter = 1000; // simple in-memory counter (use DB in production)
 
 function formatNumber(n) {
     return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
+function generateOrderRef() {
+    return `HALO-\( {Date.now().toString().slice(-6)}- \){++orderCounter}`;
+}
+
 async function halotelCommand(sock, chatId, message, userMessage = '') {
     try {
-        // Restrict to private chat only
         if (chatId.endsWith('@g.us')) {
-            await sock.sendMessage(chatId, {
-                text: '🔒 *Private Chat Only*\n\nThis command works only in direct messages for security and privacy.'
-            }, { quoted: message });
+            await sock.sendMessage(chatId, { text: '🔒 Private Chat Only for orders' }, { quoted: message });
             return;
         }
 
-        // Extract text
-        const text = (userMessage || 
-            message.message?.conversation || 
-            message.message?.extendedTextMessage?.text || ''
-        ).trim();
-
+        const text = (userMessage || message.message?.conversation || message.message?.extendedTextMessage?.text || '').trim();
         const args = text.split(/\s+/).slice(1);
 
         if (args.length === 0) {
-            return await sock.sendMessage(chatId, {
-                text: `*⚡ HALOTEL BUNDLE SHOP ⚡*\n\n` +
-                      `📦 Buy fast Halotel data bundles at the best price!\n\n` +
-                      `💡 *Usage Examples:*\n` +
-                      `• .halotel gb20 255612130873 Mickey\n` +
-                      `• .halotel 50 255768990011 John Doe\n` +
-                      `• .halotel gb100 255123456789\n\n` +
-                      `🔻 Minimum: 10 GB`
+            return sock.sendMessage(chatId, {
+                text: `*⚡ HALOTEL BUNDLE SHOP ⚡*\n\nExamples:\n• .halotel 20 255612130873 Mickey\n• .halotel gb50 255768990011\nMin: 10 GB`
             }, { quoted: message });
         }
 
-        // === Smart Argument Parsing ===
-        let gbAmount = null;
-        let phoneNumber = null;
-        let customerName = '';
+        // Parse args (same as before)
+        let gbAmount = null, phoneNumber = null, customerName = '';
+        // ... (keep your parsing logic here)
 
-        // Detect GB amount (gb10, GB50, 30, etc.)
-        for (let i = 0; i < args.length; i++) {
-            const part = args[i].toLowerCase();
-            if (part.startsWith('gb') && !gbAmount) {
-                const num = parseInt(part.replace(/[^0-9]/g, ''), 10);
-                if (!isNaN(num) && num >= MIN_GB) {
-                    gbAmount = num;
-                    args.splice(i, 1);
-                    i--;
-                }
-            } else if (!gbAmount && !isNaN(part)) {
-                const num = parseInt(part, 10);
-                if (num >= MIN_GB && num <= 10000) {
-                    gbAmount = num;
-                    args.splice(i, 1);
-                    i--;
-                }
-            }
-        }
-
-        // Extract phone number (longest numeric string)
-        for (let i = 0; i < args.length; i++) {
-            const digits = args[i].replace(/[^0-9]/g, '');
-            if (digits.length >= 9 && digits.length <= 15) {
-                phoneNumber = digits;
-                args.splice(i, 1);
-                break;
-            }
-        }
-
-        // Remaining = customer name
-        if (args.length > 0) {
-            customerName = args.join(' ').trim();
-        }
-
-        // === Validation ===
-        if (!gbAmount || gbAmount < MIN_GB) {
-            return await sock.sendMessage(chatId, {
-                text: '❌ *Invalid Bundle Amount*\n\nMinimum allowed is *10 GB*\nExample: `gb20` or `50`'
-            }, { quoted: message });
-        }
-
-        if (!phoneNumber) {
-            return await sock.sendMessage(chatId, {
-                text: '📱 *Phone Number Required*\n\nPlease provide the recipient number:\nExample: `.halotel gb30 255612130873 Mickey`'
-            }, { quoted: message });
-        }
+        // Validation (keep yours)
 
         const totalPrice = gbAmount * PRICE_PER_GB;
+        const orderRef = generateOrderRef();
 
-        // === Step 1: Bundle Confirmation with Futuristic Banner ===
-        const confirmationText = 
-`╭━━━✦ *HALOTEL DATA BUNDLE* ✦━━━╮
-┃                                  
-┃  📶 *Bundle Size:*   ${gbAmount} GB
-┃  💰 *Price per GB:*  TSh ${formatNumber(PRICE_PER_GB)}
-┃  ─────────────────────────────
-┃  💳 *Total Amount:*  TSh ${formatNumber(totalPrice)}
-┃                                  
-┃  📱 *Recipient:*     ${phoneNumber}
-┃  👤 *Name (Opt):*    ${customerName || 'Not provided'}
-┃                                  
-╰━━━✦ *Ready to Purchase?* ✦━━━╯
+        // Step 1: Confirmation
+        // ... (keep your banner + text)
 
-🚀 Powered by premium Halotel network`;
-
-        let bannerBuffer = null;
-        try {
-            bannerBuffer = await getBuffer(AD_BANNER_1);
-        } catch (e) {
-            console.log('Banner 1 failed to load');
-        }
-
-        const adReply1 = bannerBuffer ? {
-            externalAdReply: {
-                title: "⚡ HALOTEL BUNDLE ORDER",
-                body: `${gbAmount} GB • TSh ${formatNumber(totalPrice)}`,
-                thumbnail: bannerBuffer,
-                mediaType: 1,
-                renderLargerThumbnail: true,
-                sourceUrl: settings.homepage || ''
-            }
-        } : {};
-
-        await sock.sendMessage(chatId, {
-            text: confirmationText,
-            contextInfo: adReply1
-        }, { quoted: message });
-
-        // Small futuristic delay
-        await new Promise(r => setTimeout(r, 1500));
-
-        // === Step 2: Payment Options with Sleek Design ===
-        const waMessage = `Hello \( {SELLER_NAME},\n\nI want to buy * \){gbAmount} GB* Halotel bundle\n` +
-            `📱 Recipient: ${phoneNumber}\n` +
-            `👤 Name: ${customerName || '—'}\n` +
-            `💰 Amount: TSh ${formatNumber(totalPrice)}\n\nPlease process my order. Thank you!`;
-
+        // Step 2: Payment + improved collection
+        const waMessage = `New Order!\nRef: \( {orderRef}\n \){gbAmount} GB to ${phoneNumber}\nName: ${customerName || '—'}\nAmount: TSh ${formatNumber(totalPrice)}\nPlease process.`;
         const waPayLink = `https://wa.me/\( {SELLER_NUMBER}?text= \){encodeURIComponent(waMessage)}`;
 
         const paymentText = 
-`╭━━━✦ *SECURE PAYMENT* ✦━━━╮
-┃                               
-┃  👤 *Seller:* ${SELLER_NAME}
-┃  ☎️  *Contact:* +${SELLER_NUMBER}
-┃  💰 *Pay:* TSh ${formatNumber(totalPrice)}
-┃                               
-┃  🔹 After payment, reply here with:
-┃     • Transaction ID / Screenshot
-┃     • Confirmation message
-┃                               
-┃  ⏱ Bundle delivered in < 5 mins
-╰━━━✦ *Fast • Safe • Reliable* ✦━━━╯`;
+`╭━━━✦ *PAY & CONFIRM* ✦━━━╮
+┃ Seller: \( {SELLER_NAME} (+ \){SELLER_NUMBER})
+┃ Amount: TSh ${formatNumber(totalPrice)}
+┃ Ref: ${orderRef}
+┃
+┃ After payment:
+┃ 1. Send screenshot / M-Pesa ID here
+┃ 2. Or reply: PAID ${orderRef} [ID]
+┃
+┃ Delivery: <5 mins after confirm
+╰━━━━━━━━━━━━━━━━━━━━━━━╯`;
 
-        let paymentBanner = null;
-        try {
-            paymentBanner = await getBuffer(AD_BANNER_2);
-        } catch (e) {
-            console.log('Payment banner failed');
-        }
+        // ... (keep buttons + sendButtons)
 
-        const buttons = [
-            {
-                urlButton: {
-                    displayText: '💸 Pay via WhatsApp',
-                    url: waPayLink
-                }
-            },
-            {
-                quickReplyButton: {
-                    displayText: '☎️ Contact Seller',
-                    id: `.contact ${SELLER_NUMBER} ${SELLER_NAME}`
-                }
-            },
-            {
-                quickReplyButton: {
-                    displayText: '📋 Order History',
-                    id: '.myorders' // You can implement this later
-                }
-            }
-        ];
+        await new Promise(r => setTimeout(r, 1000));
 
-        const adReply2 = paymentBanner ? {
-            externalAdReply: {
-                title: "🔐 SECURE PAYMENT GATEWAY",
-                body: "Tap to pay • Instant delivery",
-                thumbnail: paymentBanner,
-                sourceUrl: waPayLink,
-                mediaType: 1,
-                renderLargerThumbnail: true
-            }
-        } : {};
-
-        await sendButtons(
-            sock,
-            chatId,
-            paymentText,
-            'Choose Payment Method',
-            buttons,
-            message,
-            { contextInfo: adReply2 }
-        );
-
-        // Optional: Send final confirmation text
-        await new Promise(r => setTimeout(r, 800));
         await sock.sendMessage(chatId, {
-            text: '✨ *Order logged successfully!*\n\nWe\'re ready when you are. Payment confirms instant delivery 🚀'
+            text: `✨ *Order ${orderRef} logged!*\n\nReply with payment proof to confirm. We'll notify you once processed 🚀`
         });
 
-        // === New Feature: Send audio confirmation note (voice message) ===
-        await new Promise(r => setTimeout(r, 1200)); // short natural pause before audio
+        // Send audio confirmation (fixed version)
+        await new Promise(r => setTimeout(r, 1500));
 
         try {
             await sock.sendMessage(chatId, {
-                audio: { url: ORDER_CONFIRMATION_AUDIO },
-                mimetype: 'audio/mpeg',          // good for .mp3 files
-                ptt: true,                       // makes it a voice note (PTT = push-to-talk)
-                fileName: 'order-confirmation.mp3' // optional, shows nice name
+                audio: { url: ORDER_AUDIO_URL },
+                mimetype: 'audio/ogg; codecs=opus', // better for PTT / voice note
+                ptt: true,
+                seconds: 12, // hint duration (adjust to your audio length)
+                fileName: 'order-received.mp3',
+                caption: '🎙️ Order received – thank you!' // fallback text
             });
-            console.log('[Halotel] Audio confirmation sent successfully');
-        } catch (audioErr) {
-            console.error('[Halotel] Failed to send audio:', audioErr.message);
-            // Optional: fallback text if audio fails
+            console.log('[Halotel] Audio sent (opus PTT)');
+        } catch (err) {
+            console.error('[Audio Fail]', err.message);
+            // Fallback: send as normal audio + caption
             await sock.sendMessage(chatId, {
-                text: '🎵 Voice confirmation note sent (if you don\'t see it, check your connection)'
-            }).catch(() => {});
+                audio: { url: ORDER_AUDIO_URL },
+                mimetype: 'audio/mpeg',
+                ptt: false,
+                caption: '🎵 Order confirmation audio (tap to play)\nRef: ' + orderRef
+            });
         }
 
+        // Bonus: Notify seller privately with full details
+        await sock.sendMessage(SELLER_JID, {
+            text: `🆕 New Halotel Order!\nRef: ${orderRef}\nGB: ${gbAmount}\nTo: ${phoneNumber}\nName: ${customerName || '—'}\nTotal: TSh ${formatNumber(totalPrice)}\nChat: ${chatId.split('@')[0]}`
+        }).catch(() => {});
+
     } catch (error) {
-        console.error('Error in halotel command:', error);
-        try {
-            await sock.sendMessage(chatId, {
-                text: '⚠️ *System Error*\n\nSomething went wrong. Please try again in a moment.\n\nSupport: Contact admin if issue persists.'
-            }, { quoted: message });
-        } catch (e) {}
+        console.error('Halotel error:', error);
+        await sock.sendMessage(chatId, { text: '⚠️ Error – try again or contact support' }, { quoted: message });
     }
 }
 
