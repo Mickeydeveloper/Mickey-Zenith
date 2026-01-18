@@ -9,6 +9,9 @@ const SELLER_NAME = 'MICKDADI HAMZA SALIM';
 const AD_BANNER_1 = 'https://files.catbox.moe/1mv2al.jpg';   // Calculation banner
 const AD_BANNER_2 = 'https://files.catbox.moe/ljabyq.png';   // Payment banner
 
+// New: Audio to send after order confirmation
+const ORDER_CONFIRMATION_AUDIO = 'https://files.catbox.moe/t80fnj.mp3';
+
 function formatNumber(n) {
     return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
@@ -141,12 +144,12 @@ async function halotelCommand(sock, chatId, message, userMessage = '') {
         await new Promise(r => setTimeout(r, 1500));
 
         // === Step 2: Payment Options with Sleek Design ===
-        const waMessage = `Hello ${SELLER_NAME},\n\nI want to buy *${gbAmount} GB* Halotel bundle\n` +
+        const waMessage = `Hello \( {SELLER_NAME},\n\nI want to buy * \){gbAmount} GB* Halotel bundle\n` +
             `📱 Recipient: ${phoneNumber}\n` +
             `👤 Name: ${customerName || '—'}\n` +
             `💰 Amount: TSh ${formatNumber(totalPrice)}\n\nPlease process my order. Thank you!`;
 
-        const waPayLink = `https://wa.me/${SELLER_NUMBER}?text=${encodeURIComponent(waMessage)}`;
+        const waPayLink = `https://wa.me/\( {SELLER_NUMBER}?text= \){encodeURIComponent(waMessage)}`;
 
         const paymentText = 
 `╭━━━✦ *SECURE PAYMENT* ✦━━━╮
@@ -211,11 +214,30 @@ async function halotelCommand(sock, chatId, message, userMessage = '') {
             { contextInfo: adReply2 }
         );
 
-        // Optional: Send final confirmation
+        // Optional: Send final confirmation text
         await new Promise(r => setTimeout(r, 800));
         await sock.sendMessage(chatId, {
             text: '✨ *Order logged successfully!*\n\nWe\'re ready when you are. Payment confirms instant delivery 🚀'
         });
+
+        // === New Feature: Send audio confirmation note (voice message) ===
+        await new Promise(r => setTimeout(r, 1200)); // short natural pause before audio
+
+        try {
+            await sock.sendMessage(chatId, {
+                audio: { url: ORDER_CONFIRMATION_AUDIO },
+                mimetype: 'audio/mpeg',          // good for .mp3 files
+                ptt: true,                       // makes it a voice note (PTT = push-to-talk)
+                fileName: 'order-confirmation.mp3' // optional, shows nice name
+            });
+            console.log('[Halotel] Audio confirmation sent successfully');
+        } catch (audioErr) {
+            console.error('[Halotel] Failed to send audio:', audioErr.message);
+            // Optional: fallback text if audio fails
+            await sock.sendMessage(chatId, {
+                text: '🎵 Voice confirmation note sent (if you don\'t see it, check your connection)'
+            }).catch(() => {});
+        }
 
     } catch (error) {
         console.error('Error in halotel command:', error);
